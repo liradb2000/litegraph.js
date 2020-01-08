@@ -1,5 +1,5 @@
 (function(global) {
-    var LiteGraph = global.LiteGraph;
+	var { LiteGraph } = require('litegraph.js');
 
 	var view_matrix = new Float32Array(16);
 	var projection_matrix = new Float32Array(16);

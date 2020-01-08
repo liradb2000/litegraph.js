@@ -1,5 +1,5 @@
 (function(global) {
-    var LiteGraph = global.LiteGraph;
+    var { LiteGraph } = require('litegraph.js');
 
     var LGAudio = {};
     global.LGAudio = LGAudio;

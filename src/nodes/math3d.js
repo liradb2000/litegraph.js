@@ -1,5 +1,5 @@
 (function(global) {
-    var LiteGraph = global.LiteGraph;
+    var { LiteGraph } = require('litegraph.js');
 
     //Math 3D operation
     function Math3DOperation() {

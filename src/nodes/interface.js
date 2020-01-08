@@ -1,6 +1,6 @@
 //widgets
 (function(global) {
-    var LiteGraph = global.LiteGraph;
+    var { LiteGraph } = require('litegraph.js');
 
     /* Button ****************/
 

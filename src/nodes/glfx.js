@@ -1,5 +1,5 @@
 (function(global) {
-    var LiteGraph = global.LiteGraph;
+    var { LiteGraph } = require('litegraph.js');
 
     //Works with Litegl.js to create WebGL nodes
     if (typeof GL != "undefined") {

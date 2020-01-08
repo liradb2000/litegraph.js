@@ -1,6 +1,6 @@
 //event related nodes
 (function(global) {
-    var LiteGraph = global.LiteGraph;
+    var { LiteGraph } = require('litegraph.js');
 
     //Show value inside the debug console
     function LogEvent() {

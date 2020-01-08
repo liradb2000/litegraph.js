@@ -1,6 +1,6 @@
 //basic nodes
 (function(global) {
-    var LiteGraph = global.LiteGraph;
+    var { LiteGraph } = require('litegraph.js');
 
     //Constant
     function Time() {
