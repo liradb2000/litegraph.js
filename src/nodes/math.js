@@ -1,5 +1,4 @@
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function mathWidget(LiteGraph) {
 
     //Converter
     function Converter() {
@@ -1384,4 +1383,4 @@
 
         LiteGraph.registerNodeType("math3d/quat-slerp", Math3DQuatSlerp);
     } //glMatrix
-})(this);
+};

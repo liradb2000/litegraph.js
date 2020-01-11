@@ -1,5 +1,4 @@
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function logicWidget(LiteGraph) {
 
     function Selector() {
         this.addInput("sel", "number");
@@ -82,4 +81,4 @@
     };
 
     LiteGraph.registerNodeType("logic/sequence", Sequence);
-})(this);
+};

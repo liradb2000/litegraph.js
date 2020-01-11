@@ -1,5 +1,4 @@
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function gltexturesWidget(LiteGraph) {
 
     //Works with Litegl.js to create WebGL nodes
     global.LGraphTexture = null;
@@ -4844,4 +4843,4 @@ void main(void){\n\
 	};
 
 	LiteGraph.registerNodeType( "texture/cubemapToTexture2D", LGraphCubemapToTexture2D );
-})(this);
+};

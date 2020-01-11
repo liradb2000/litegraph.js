@@ -1,6 +1,5 @@
 //widgets
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function interfaceWidget(LiteGraph) {
 
     /* Button ****************/
 
@@ -753,4 +752,4 @@
     };
 
     LiteGraph.registerNodeType("widget/panel", WidgetPanel);
-})(this);
+};

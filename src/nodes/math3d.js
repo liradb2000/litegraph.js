@@ -1,5 +1,4 @@
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function math3dWidget(LiteGraph) {
 
     //Math 3D operation
     function Math3DOperation() {
@@ -430,4 +429,4 @@
 	else
 		console.warn("No glmatrix found, some Math3D nodes may not work");
 
-})(this);
+};

@@ -1,6 +1,5 @@
 //event related nodes
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function eventWidget(LiteGraph) {
 
     //Show value inside the debug console
     function LogEvent() {
@@ -323,4 +322,4 @@
 	}
 
     LiteGraph.registerNodeType("basic/data_store", DataStore);
-})(this);
+};

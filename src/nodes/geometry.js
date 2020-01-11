@@ -1,5 +1,4 @@
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function geometryWidget(LiteGraph) {
 
 	var view_matrix = new Float32Array(16);
 	var projection_matrix = new Float32Array(16);
@@ -1076,4 +1075,4 @@ function LGraphGeometryDisplace() {
 
 
 
-})(this);
+};

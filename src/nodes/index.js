@@ -1,0 +1,14 @@
+export {default as baseWidget} from './base';
+export {default as eventsWidget} from './events';
+export {default as geometryWidget} from './geometry';
+export {default as glfxWidget} from './glfx';
+export {default as gltexturesWidget} from './gltextures';
+export {default as graphicsWidget} from './graphics';
+export {default as inputWidget} from './input';
+export {default as interfaceWidget} from './interface';
+export {default as logicWidget} from './logic';
+export {default as mathWidget} from './math';
+export {default as math3dWidget} from './math3d';
+export {default as midiWidget} from './midi';
+export {default as networkWidget} from './network';
+export {default as stringsWidget} from './strings';
