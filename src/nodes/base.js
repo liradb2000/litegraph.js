@@ -1,7 +1,5 @@
 //basic nodes
-(function(global) {
-    var { LiteGraph } = require('litegraph.js');
-
+export default function baseWidget(LiteGraph) {
     //Constant
     function Time() {
         this.addOutput("in ms", "number");
@@ -991,4 +989,4 @@
     };
 
     LiteGraph.registerNodeType("basic/script", NodeScript);
-})(this);
+};

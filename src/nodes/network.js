@@ -1,6 +1,5 @@
 //event related nodes
-(function(global) {
-    var { LiteGraph } = require('litegraph.js');
+export default function networkWidget(LiteGraph) {
 
     function LGWebSocket() {
         this.size = [60, 20];
@@ -362,4 +361,4 @@
     };
 
     LiteGraph.registerNodeType("network/sillyclient", LGSillyClient);
-})(this);
+};

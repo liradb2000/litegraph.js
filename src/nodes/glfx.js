@@ -1,5 +1,4 @@
-(function(global) {
-    var { LiteGraph } = require('litegraph.js');
+export default function glfxWidget(LiteGraph) {
 
     //Works with Litegl.js to create WebGL nodes
     if (typeof GL != "undefined") {
@@ -784,4 +783,4 @@
         LiteGraph.registerNodeType("fx/vigneting", LGraphFXVigneting);
         global.LGraphFXVigneting = LGraphFXVigneting;
     }
-})(this);
+};

@@ -1,5 +1,4 @@
-(function(global) {
-    var { LiteGraph } = require('litegraph.js');
+export default function graphicsWidget(LiteGraph) {
 
     function GraphicsPlot() {
         this.addInput("A", "Number");
@@ -885,4 +884,4 @@
     };
 
     LiteGraph.registerNodeType("graphics/webcam", ImageWebcam);
-})(this);
+};

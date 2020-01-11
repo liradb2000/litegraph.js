@@ -1,5 +1,4 @@
-(function(global) {
-    var { LiteGraph } = require('litegraph.js');
+export default function midiWidget(LiteGraph) {
     var MIDI_COLOR = "#243";
 
     function MIDIEvent(data) {
@@ -1477,4 +1476,4 @@
     function now() {
         return window.performance.now();
     }
-})(this);
+};

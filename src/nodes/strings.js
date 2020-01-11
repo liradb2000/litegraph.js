@@ -1,6 +1,5 @@
 //basic nodes
-(function(global) {
-    var { LiteGraph } = require('litegraph.js');
+export default function stringWidget(LiteGraph) {
 
     function toString(a) {
         return String(a);
@@ -92,4 +91,4 @@
         "String",
         { precision: 0 }
     );
-})(this);
+};

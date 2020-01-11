@@ -1,5 +1,4 @@
-(function(global) {
-    var { LiteGraph } = require('litegraph.js');
+export default function audioWidget(LiteGraph) {
 
     var LGAudio = {};
     global.LGAudio = LGAudio;
@@ -1446,4 +1445,4 @@ LiteGraph.registerNodeType("audio/waveShaper", LGAudioWaveShaper);
     LGAudioDestination.title = "Destination";
     LGAudioDestination.desc = "Audio output";
     LiteGraph.registerNodeType("audio/destination", LGAudioDestination);
-})(this);
+};
