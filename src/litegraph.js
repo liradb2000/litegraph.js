@@ -737,7 +737,7 @@
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
 
-    LGraph.prototype.runStep = function(num, do_not_catch_errors, limit ) {
+    LGraph.prototype.runStep = function(num, do_not_catch_errors, limit, type ) {
         num = num || 1;
 
         var start = LiteGraph.getTime();
@@ -759,6 +759,19 @@
                     var node = nodes[j];
                     if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
                         node.onExecute(); //hard to send elapsed time
+                        switch (type) {
+                            case "3d":
+                                node.on3DExecute && node.on3DExecute()
+                                break;
+                            case "frame":
+                                node.onFrameExecute && node.onFrameExecute()
+                                break;
+                            case "2d":
+                                node.on2DExecute && node.on2DExecute()
+                                break;
+                            default:
+                                break;
+                        }
                     }
                 }
 
@@ -779,6 +792,19 @@
                         var node = nodes[j];
                         if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
                             node.onExecute();
+                            switch (type) {
+                                case "3d":
+                                    node.on3DExecute && node.on3DExecute()
+                                    break;
+                                case "frame":
+                                    node.onFrameExecute && node.onFrameExecute()
+                                    break;
+                                case "2d":
+                                    node.on2DExecute && node.on2DExecute()
+                                    break;
+                                default:
+                                    break;
+                            }
                         }
                     }
 

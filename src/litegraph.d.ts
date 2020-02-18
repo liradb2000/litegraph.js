@@ -12,6 +12,11 @@ export type widgetTypes =
     | "toggle"
     | "button";
 
+export type excuteTypes =
+    | "2d"
+    | "3d"
+    | "frame";
+
 /** https://github.com/jagenjo/litegraph.js/tree/master/guides#node-slots */
 export interface INodeSlot {
     name: string;
@@ -382,7 +387,7 @@ export declare class LGraph {
      * Run N steps (cycles) of the graph
      * @param num number of steps to run, default is 1
      */
-    runStep(num?: number, do_not_catch_errors?: boolean): void;
+    runStep(num?: number, do_not_catch_errors?: boolean, limit?: number, type?: excuteTypes): void;
     /**
      * Updates the graph execution order according to relevance of the nodes (nodes with only outputs have more relevance than
      * nodes with only inputs.

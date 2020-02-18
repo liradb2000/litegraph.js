@@ -737,7 +737,7 @@
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
 
-    LGraph.prototype.runStep = function(num, do_not_catch_errors, limit ) {
+    LGraph.prototype.runStep = function(num, do_not_catch_errors, limit, type ) {
         num = num || 1;
 
         var start = LiteGraph.getTime();
@@ -759,6 +759,19 @@
                     var node = nodes[j];
                     if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
                         node.onExecute(); //hard to send elapsed time
+                        switch (type) {
+                            case "3d":
+                                node.on3DExecute && node.on3DExecute()
+                                break;
+                            case "frame":
+                                node.onFrameExecute && node.onFrameExecute()
+                                break;
+                            case "2d":
+                                node.on2DExecute && node.on2DExecute()
+                                break;
+                            default:
+                                break;
+                        }
                     }
                 }
 
@@ -779,6 +792,19 @@
                         var node = nodes[j];
                         if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
                             node.onExecute();
+                            switch (type) {
+                                case "3d":
+                                    node.on3DExecute && node.on3DExecute()
+                                    break;
+                                case "frame":
+                                    node.onFrameExecute && node.onFrameExecute()
+                                    break;
+                                case "2d":
+                                    node.on2DExecute && node.on2DExecute()
+                                    break;
+                                default:
+                                    break;
+                            }
                         }
                     }
 
@@ -10682,9 +10708,7 @@ if (typeof exports != "undefined") {
 }
 
 //basic nodes
-(function(global) {
-    var LiteGraph = global.LiteGraph;
-
+export default function baseWidget(LiteGraph) {
     //Constant
     function Time() {
         this.addOutput("in ms", "number");
@@ -11674,11 +11698,10 @@ if (typeof exports != "undefined") {
     };
 
     LiteGraph.registerNodeType("basic/script", NodeScript);
-})(this);
+};
 
 //event related nodes
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function eventWidget(LiteGraph) {
 
     //Show value inside the debug console
     function LogEvent() {
@@ -12001,11 +12024,10 @@ if (typeof exports != "undefined") {
 	}
 
     LiteGraph.registerNodeType("basic/data_store", DataStore);
-})(this);
+};
 
 //widgets
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function interfaceWidget(LiteGraph) {
 
     /* Button ****************/
 
@@ -12758,10 +12780,9 @@ if (typeof exports != "undefined") {
     };
 
     LiteGraph.registerNodeType("widget/panel", WidgetPanel);
-})(this);
+};
 
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function inputWidget(LiteGraph) {
 
     function GamepadInput() {
         this.addOutput("left_x_axis", "number");
@@ -13112,10 +13133,9 @@ if (typeof exports != "undefined") {
     };
 
     LiteGraph.registerNodeType("input/gamepad", GamepadInput);
-})(this);
+};
 
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function mathWidget(LiteGraph) {
 
     //Converter
     function Converter() {
@@ -14500,10 +14520,9 @@ if (typeof exports != "undefined") {
 
         LiteGraph.registerNodeType("math3d/quat-slerp", Math3DQuatSlerp);
     } //glMatrix
-})(this);
+};
 
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function logicWidget(LiteGraph) {
 
     function Selector() {
         this.addInput("sel", "number");
@@ -14586,10 +14605,9 @@ if (typeof exports != "undefined") {
     };
 
     LiteGraph.registerNodeType("logic/sequence", Sequence);
-})(this);
+};
 
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function gltexturesWidget(LiteGraph) {
 
     //Works with Litegl.js to create WebGL nodes
     global.LGraphTexture = null;
@@ -19434,10 +19452,9 @@ void main(void){\n\
 	};
 
 	LiteGraph.registerNodeType( "texture/cubemapToTexture2D", LGraphCubemapToTexture2D );
-})(this);
+};
 
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function glfxWidget(LiteGraph) {
 
     //Works with Litegl.js to create WebGL nodes
     if (typeof GL != "undefined") {
@@ -20222,10 +20239,9 @@ void main(void){\n\
         LiteGraph.registerNodeType("fx/vigneting", LGraphFXVigneting);
         global.LGraphFXVigneting = LGraphFXVigneting;
     }
-})(this);
+};
 
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function midiWidget(LiteGraph) {
     var MIDI_COLOR = "#243";
 
     function MIDIEvent(data) {
@@ -21703,10 +21719,9 @@ void main(void){\n\
     function now() {
         return window.performance.now();
     }
-})(this);
+};
 
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function audioWidget(LiteGraph) {
 
     var LGAudio = {};
     global.LGAudio = LGAudio;
@@ -23153,11 +23168,10 @@ LiteGraph.registerNodeType("audio/waveShaper", LGAudioWaveShaper);
     LGAudioDestination.title = "Destination";
     LGAudioDestination.desc = "Audio output";
     LiteGraph.registerNodeType("audio/destination", LGAudioDestination);
-})(this);
+};
 
 //event related nodes
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function networkWidget(LiteGraph) {
 
     function LGWebSocket() {
         this.size = [60, 20];
@@ -23519,4 +23533,4 @@ LiteGraph.registerNodeType("audio/waveShaper", LGAudioWaveShaper);
     };
 
     LiteGraph.registerNodeType("network/sillyclient", LGSillyClient);
-})(this);
+};
