@@ -159,8 +159,8 @@
 					get: function(v) {
 						return this._shape;
 					},
-                    enumerable: true,
-                    configurable: true,
+					enumerable: true,
+					configurable: true
 				});
 			}
 
