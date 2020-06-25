@@ -73,11 +73,12 @@ export interface IWidget<TValue = any, TOptions = any> {
      * https://github.com/jagenjo/litegraph.js/issues/76
      */
     mouse?(
-        ctx: undefined,
         event: MouseEvent,
         pos: Vector2,
         node: LGraphNode
-    ): void;
+    ): boolean;
+    /** Called by `LGraphNode.computeSize` */
+    computeSize?(width: number): [number, number];
 }
 export interface IButtonWidget extends IWidget<null, {}> {
     type: "button";
@@ -233,6 +234,8 @@ export const LiteGraph: {
     createNode<T extends LGraphNode = LGraphNode>(type: string): T;
     /** Register a node class so it can be listed when the user wants to create a new one */
     registerNodeType(type: string, base: { new (): LGraphNode }): void;
+    /** removes a node type from the system */
+    unregisterNodeType(type: string): void;
     /**
      * Create a new node type by passing a function, it wraps it with a proper class and generates inputs according to the parameters of the function.
      * Useful to wrap simple methods that do not require properties, and that only process some input to generate an output.
@@ -245,7 +248,7 @@ export const LiteGraph: {
     wrapFunctionAsNode(
         name: string,
         func: (...args: any[]) => any,
-        param_types?: [],
+        param_types?: string[],
         return_type?: string,
         properties?: object
     ): void;
@@ -436,6 +439,11 @@ export declare class LGraph {
      * @param node the instance of the node
      */
     add(node: LGraphNode, skip_compute_order?: boolean): void;
+    /**
+     * Called when a new node is added
+     * @param node the instance of the node
+     */
+    onNodeAdded(node: LGraphNode): void;
     /** Removes a node from the graph */
     remove(node: LGraphNode): void;
     /** Returns a node by its id. */
@@ -868,12 +876,12 @@ export declare class LGraphNode {
 
     // https://github.com/jagenjo/litegraph.js/blob/master/guides/README.md#custom-node-appearance
     onDrawBackground?(
-        canvas: HTMLCanvasElement,
-        ctx: CanvasRenderingContext2D
+        ctx: CanvasRenderingContext2D,
+        canvas: HTMLCanvasElement
     ): void;
     onDrawForeground?(
-        canvas: HTMLCanvasElement,
-        ctx: CanvasRenderingContext2D
+        ctx: CanvasRenderingContext2D,
+        canvas: HTMLCanvasElement
     ): void;
 
     // https://github.com/jagenjo/litegraph.js/blob/master/guides/README.md#custom-node-behaviour
@@ -931,10 +939,23 @@ export declare class LGraphNode {
     onConnectInput?(
         inputIndex: number,
         type: INodeOutputSlot["type"],
-        outputSlot: INodeOutputSlot
+        outputSlot: INodeOutputSlot,
+        _this: this,
+        slotIndex: number
     ): boolean;
+    
+    /** a connection changed (new one or removed) (LiteGraph.INPUT or LiteGraph.OUTPUT, slot, true if connected, link_info, input_info or output_info ) */
+    onConnectionsChange(
+        type: number,
+        slotIndex: number,
+        isConnected: boolean,
+        link: LLink,
+        ioSlot: (INodeOutputSlot | INodeInputSlot)
+    ): void;                           
+
     /** Called by `LGraphCanvas.processContextMenu` */
     getMenuOptions?(graphCanvas: LGraphCanvas): ContextMenuItem[];
+    getSlotMenuOptions?(slot: INodeSlot): ContextMenuItem[];
 }
 
 export type LGraphNodeConstructor<T extends LGraphNode = LGraphNode> = {
@@ -1022,6 +1043,7 @@ export declare class LGraphCanvas {
     /** Create menu for `Add Node` */
     static onMenuAdd: ContextMenuEventListener;
     static showMenuNodeOptionalInputs: ContextMenuEventListener;
+    static showMenuNodeOptionalOutputs: ContextMenuEventListener;
     static onShowMenuNodeProperties: ContextMenuEventListener;
     static onResizeNode: ContextMenuEventListener;
     static onMenuNodeCollapse: ContextMenuEventListener;
@@ -1116,6 +1138,20 @@ export declare class LGraphCanvas {
     onDrawOverlay: ((ctx: CanvasRenderingContext2D) => void) | null;
     /** Called by `LGraphCanvas.processMouseDown` */
     onMouse: ((event: MouseEvent) => boolean) | null;
+    /** Called by `LGraphCanvas.drawFrontCanvas` and `LGraphCanvas.drawLinkTooltip` */
+    onDrawLinkTooltip: ((ctx: CanvasRenderingContext2D, link: LLink, _this: this) => void) | null;
+    /** Called by `LGraphCanvas.selectNodes` */
+    onNodeMoved: ((node: LGraphNode) => void) | null;
+    /** Called by `LGraphCanvas.processNodeSelected` */
+    onNodeSelected: ((node: LGraphNode) => void) | null;
+    /** Called by `LGraphCanvas.deselectNode` */
+    onNodeDeselected: ((node: LGraphNode) => void) | null;
+    /** Called by `LGraphCanvas.processNodeDblClicked` */
+    onShowNodePanel: ((node: LGraphNode) => void) | null;
+    /** Called by `LGraphCanvas.processNodeDblClicked` */
+    onNodeDblClicked: ((node: LGraphNode) => void) | null;
+    /** Called by `LGraphCanvas.selectNodes` */
+    onSelectionChange: ((nodes: Record<number, LGraphNode>) => void) | null;
     /** Called by `LGraphCanvas.showSearchBox` */
     onSearchBox:
         | ((
@@ -1218,7 +1254,7 @@ export declare class LGraphCanvas {
     /** selects a given node (or adds it to the current selection) */
     selectNode(node: LGraphNode, add?: boolean): void;
     /** selects several nodes (or adds them to the current selection) */
-    selectNodes(nodes: LGraphNode[], add?: boolean): void;
+    selectNodes(nodes?: LGraphNode[], add?: boolean): void;
     /** removes a node from the current selection */
     deselectNode(node: LGraphNode): void;
     /** removes all nodes from the current selection */
@@ -1241,7 +1277,7 @@ export declare class LGraphCanvas {
     /** draws the front canvas (the one containing all the nodes) */
     drawFrontCanvas(): void;
     /** draws some useful stats in the corner of the canvas */
-    renderInfo(): void;
+    renderInfo(ctx: CanvasRenderingContext2D, x: number, y: number): void;
     /** draws the back canvas (the one containing the background and the connections) */
     drawBackCanvas(): void;
     /** draws the given node inside the canvas */
