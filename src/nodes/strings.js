@@ -103,6 +103,7 @@ export default function stringWidget(LiteGraph) {
         { precision: 0 }
     );
 
+    
     function StringToTable() {
         this.addInput("", "string");
         this.addOutput("table", "table");
