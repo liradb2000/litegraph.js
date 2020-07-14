@@ -274,6 +274,7 @@ export default function audioWidget(LiteGraph) {
         }
     }
 
+	LGAudioSource.desc = "Plays an audio file";
     LGAudioSource["@src"] = { widget: "resource" };
     LGAudioSource.supported_extensions = ["wav", "ogg", "mp3"];
 
@@ -289,7 +290,7 @@ export default function audioWidget(LiteGraph) {
         }
 
         if (this.properties.autoplay) {
-            this.playBuffer(this._audiobuffer);
+			this.playBuffer(this._audiobuffer);
         }
     };
 
@@ -344,8 +345,10 @@ export default function audioWidget(LiteGraph) {
                 if (v === undefined) {
                     continue;
                 }
-                if (input.name == "gain") {
+                if (input.name == "gain")
                     this.audionode.gain.value = v;
+                else if (input.name == "src") {
+                    this.setProperty("src",v);
                 } else if (input.name == "playbackRate") {
                     this.properties.playbackRate = v;
                     for (var j = 0; j < this._audionodes.length; ++j) {
@@ -400,7 +403,10 @@ export default function audioWidget(LiteGraph) {
         audionode.playbackRate.value = this.properties.playbackRate;
         this._audionodes.push(audionode);
         audionode.connect(this.audionode); //connect to gain
-        this._audionodes.push(audionode);
+
+		this._audionodes.push(audionode);
+
+		this.trigger("start");
 
         audionode.onended = function() {
             //console.log("ended!");
@@ -457,13 +463,14 @@ export default function audioWidget(LiteGraph) {
     LGAudioSource.prototype.onGetInputs = function() {
         return [
             ["playbackRate", "number"],
+			["src","string"],
             ["Play", LiteGraph.ACTION],
             ["Stop", LiteGraph.ACTION]
         ];
     };
 
     LGAudioSource.prototype.onGetOutputs = function() {
-        return [["buffer", "audiobuffer"], ["ended", LiteGraph.EVENT]];
+        return [["buffer", "audiobuffer"], ["start", LiteGraph.EVENT], ["ended", LiteGraph.EVENT]];
     };
 
     LGAudioSource.prototype.onDropFile = function(file) {
@@ -1356,7 +1363,7 @@ LiteGraph.registerNodeType("audio/waveShaper", LGAudioWaveShaper);
         }
     };
 
-    LGAudioScript["@code"] = { widget: "code" };
+    LGAudioScript["@code"] = { widget: "code", type: "code" };
 
     LGAudioScript.prototype.onStart = function() {
         this.audionode.onaudioprocess = this._callback;
