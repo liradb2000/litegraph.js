@@ -10065,11 +10065,11 @@ LGraphNode.prototype.executeAction = function(action)
             });
         }
 
-		// if(0) //TODO
-		// options.push({
-		// 	content: "To Subgraph",
-		// 	callback: LGraphCanvas.onMenuNodeToSubgraph
-		// });
+		if(0) //TODO
+		options.push({
+			content: "To Subgraph",
+			callback: LGraphCanvas.onMenuNodeToSubgraph
+		});
 
         if (node.removable !== false) {
             options.push(null, {
