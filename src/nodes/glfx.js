@@ -1,4 +1,5 @@
 export default function glfxWidget(LiteGraph) {
+    var LGraphTexture = LiteGraph.LGraphTexture;
 
     //Works with Litegl.js to create WebGL nodes
     if (typeof GL != "undefined") {

@@ -132,4 +132,4 @@ export default function stringWidget(LiteGraph) {
 
     LiteGraph.registerNodeType("string/toTable", StringToTable);
 
-}
+};

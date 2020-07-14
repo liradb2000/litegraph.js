@@ -1,5 +1,5 @@
 export default function gltexturesWidget(LiteGraph) {
-
+	var LGraphCanvas = LiteGraph.LGraphCanvas;
     //Works with Litegl.js to create WebGL nodes
     global.LGraphTexture = null;
 
