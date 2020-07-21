@@ -16,6 +16,7 @@ export type SlotShape =
     | typeof LiteGraph.CIRCLE_SHAPE
     | typeof LiteGraph.ARROW_SHAPE
     | typeof LiteGraph.SQUARE_SHAPE
+    | number; // For custom shapes
 
 export type excuteTypes =
     | "2d"
@@ -243,6 +244,8 @@ export const LiteGraph: {
     registerNodeType(type: string, base: { new (): LGraphNode }): void;
     /** removes a node type from the system */
     unregisterNodeType(type: string): void;
+    /** Removes all previously registered node's types. */
+    clearRegisteredTypes(): void;
     /**
      * Create a new node type by passing a function, it wraps it with a proper class and generates inputs according to the parameters of the function.
      * Useful to wrap simple methods that do not require properties, and that only process some input to generate an output.
@@ -1313,6 +1316,8 @@ export declare class LGraphCanvas {
     drawBackCanvas(): void;
     /** draws the given node inside the canvas */
     drawNode(node: LGraphNode, ctx: CanvasRenderingContext2D): void;
+    /** draws graphic for node's slot */
+    drawSlotGraphic(ctx: CanvasRenderingContext2D, pos: number[], shape: SlotShape, horizontal: boolean): void;
     /** draws the shape of the given node in the canvas */
     drawNodeShape(
         node: LGraphNode,

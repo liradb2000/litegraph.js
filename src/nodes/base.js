@@ -50,6 +50,7 @@ export default function baseWidget(LiteGraph) {
         return [["enabled", "boolean"]];
     };
 
+	/*
     Subgraph.prototype.onDrawTitle = function(ctx) {
         if (this.flags.collapsed) {
             return;
@@ -66,6 +67,7 @@ export default function baseWidget(LiteGraph) {
         ctx.lineTo(x + w * 0.5, -w * 0.3);
         ctx.fill();
     };
+	*/
 
     Subgraph.prototype.onDblClick = function(e, pos, graphcanvas) {
         var that = this;
@@ -74,6 +76,7 @@ export default function baseWidget(LiteGraph) {
         }, 10);
     };
 
+	/*
     Subgraph.prototype.onMouseDown = function(e, pos, graphcanvas) {
         if (
             !this.flags.collapsed &&
@@ -86,6 +89,7 @@ export default function baseWidget(LiteGraph) {
             }, 10);
         }
     };
+	*/
 
     Subgraph.prototype.onAction = function(action, param) {
         this.subgraph.onAction(action, param);
@@ -124,6 +128,46 @@ export default function baseWidget(LiteGraph) {
             this.subgraph.sendEventToAllNodes(eventname, param, mode);
         }
     };
+
+	Subgraph.prototype.onDrawBackground = function(ctx, graphcanvas, canvas, pos)
+	{
+		if(this.flags.collapsed)
+			return;
+
+		var y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
+
+		//button
+		var over = LiteGraph.isInsideRectangle(pos[0],pos[1],this.pos[0],this.pos[1] + y,this.size[0],LiteGraph.NODE_TITLE_HEIGHT);
+		ctx.fillStyle = over ? "#555" : "#222";
+		ctx.beginPath();
+		if (this._shape == LiteGraph.BOX_SHAPE)
+			ctx.rect(0, y, this.size[0]+1, LiteGraph.NODE_TITLE_HEIGHT);
+		else
+			ctx.roundRect( 0, y, this.size[0]+1, LiteGraph.NODE_TITLE_HEIGHT, 0, 8);
+		ctx.fill();
+
+		//button
+		ctx.textAlign = "center";
+		ctx.font = "24px Arial";
+		ctx.fillStyle = over ? "#DDD" : "#999";
+		ctx.fillText( "+", this.size[0] * 0.5, y + 24 );
+	}
+
+	Subgraph.prototype.onMouseDown = function(e, localpos, graphcanvas)
+	{
+		var y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
+		if(localpos[1] > y)
+		{
+			graphcanvas.showSubgraphPropertiesDialog(this);
+		}
+	}
+
+	Subgraph.prototype.computeSize = function()
+	{
+		var num_inputs = this.inputs ? this.inputs.length : 0;
+		var num_outputs = this.outputs ? this.outputs.length : 0;
+		return [ 200, Math.max(num_inputs,num_outputs) * LiteGraph.NODE_SLOT_HEIGHT + LiteGraph.NODE_TITLE_HEIGHT ];
+	}
 
     //**** INPUTS ***********************************
     Subgraph.prototype.onSubgraphTrigger = function(event, param) {
@@ -381,15 +425,21 @@ export default function baseWidget(LiteGraph) {
 		this.updateType();
 	}
 
+	//ensures the type in the node output and the type in the associated graph input are the same
 	GraphInput.prototype.updateType = function()
 	{
 		var type = this.properties.type;
 		this.type_widget.value = type;
+
+		//update output
 		if(this.outputs[0].type != type)
 		{
+	        if (!LiteGraph.isValidConnection(this.outputs[0].type,type))
+				this.disconnectOutput(0);
 			this.outputs[0].type = type;
-			this.disconnectOutput(0);
 		}
+
+		//update widget
 		if(type == "number")
 		{
 			this.value_widget.type = "number";
@@ -411,8 +461,14 @@ export default function baseWidget(LiteGraph) {
 			this.value_widget.value = null;
 		}
 		this.properties.value = this.value_widget.value;
+
+		//update graph
+		if (this.graph && this.name_in_graph) {
+			this.graph.changeInputType(this.name_in_graph, type);
+		}
 	}
 
+	//this is executed AFTER the property has changed
 	GraphInput.prototype.onPropertyChanged = function(name,v)
 	{
 		if( name == "name" )
@@ -434,8 +490,7 @@ export default function baseWidget(LiteGraph) {
 		}
 		else if( name == "type" )
 		{
-			v = v || "";
-			this.updateType(v);
+			this.updateType();
 		}
 		else if( name == "value" )
 		{
@@ -512,6 +567,8 @@ export default function baseWidget(LiteGraph) {
                 if (v == "action" || v == "event") {
                     v = LiteGraph.ACTION;
                 }
+		        if (!LiteGraph.isValidConnection(that.inputs[0].type,v))
+					that.disconnectInput(0);
                 that.inputs[0].type = v;
                 if (that.name_in_graph) {
                     //already added
@@ -986,21 +1043,51 @@ export default function baseWidget(LiteGraph) {
         this.size = [60, 30];
         this.addInput("in");
         this.addOutput("out");
-		this.properties = { varname: "myname", global: false };
+		this.properties = { varname: "myname", container: Variable.LITEGRAPH };
         this.value = null;
     }
 
     Variable.title = "Variable";
     Variable.desc = "store/read variable value";
 
+	Variable.LITEGRAPH = 0; //between all graphs
+	Variable.GRAPH = 1;	//only inside this graph
+	Variable.GLOBALSCOPE = 2;	//attached to Window
+
+    Variable["@container"] = { type: "enum", values: {"litegraph":Variable.LITEGRAPH, "graph":Variable.GRAPH,"global": Variable.GLOBALSCOPE} };
+
     Variable.prototype.onExecute = function() {
-		this.value = this.getInputData(0);
-		if(this.graph)
-			this.graph.vars[ this.properties.varname ] = this.value;
-		if(this.properties.global)
-			global[this.properties.varname] = this.value;
-		this.setOutputData(0, this.value );
+		var container = this.getContainer();
+
+		if(this.isInputConnected(0))
+		{
+			this.value = this.getInputData(0);
+			container[ this.properties.varname ] = this.value;
+			this.setOutputData(0, this.value );
+			return;
+		}
+
+		this.setOutputData( 0, container[ this.properties.varname ] );
     };
+
+	Variable.prototype.getContainer = function()
+	{
+		switch(this.properties.container)
+		{
+			case Variable.GRAPH:
+				if(this.graph)
+					return this.graph.vars;
+				return {};
+				break;
+			case Variable.GLOBALSCOPE:
+				return global;
+				break;
+			case Variable.LITEGRAPH:
+			default:
+				return LiteGraph.Globals;
+				break;
+		}
+	}
 
     Variable.prototype.getTitle = function() {
         return this.properties.varname;
