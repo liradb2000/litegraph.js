@@ -83,6 +83,8 @@
         TRANSPARENT_TITLE: 2,
         AUTOHIDE_TITLE: 3,
 
+        ASYNC:false, //used to async to like sync
+
         proxy: null, //used to redirect calls
         node_images_path: "",
 
@@ -796,6 +798,16 @@
      */
 
     LGraph.prototype.start = function(interval) {
+        return LiteGraph.ASYNC? this.asyncStart(interval):this.syncStart(interval)
+    }
+
+    /**
+     * Starts running this graph every interval milliseconds.
+     * @method syncStart
+     * @param {number} interval amount of milliseconds between executions, if 0 then it renders to the monitor refresh rate
+     */
+
+    LGraph.prototype.syncStart = function(interval) {
         if (this.status == LGraph.STATUS_RUNNING) {
             return;
         }
@@ -822,7 +834,7 @@
                 window.requestAnimationFrame(on_frame);
 				if(that.onBeforeStep)
 					that.onBeforeStep();
-                that.runStep(1, !that.catch_errors);
+                that.syncRunStep(1, !that.catch_errors);
 				if(that.onAfterStep)
 					that.onAfterStep();
             }
@@ -833,7 +845,59 @@
                 //execute
 				if(that.onBeforeStep)
 					that.onBeforeStep();
-                that.runStep(1, !that.catch_errors);
+                that.syncRunStep(1, !that.catch_errors);
+				if(that.onAfterStep)
+					that.onAfterStep();
+            }, interval);
+        }
+    };
+
+
+    /**
+     * Starts running this graph every interval milliseconds.
+     * @method asyncStart
+     * @param {number} interval amount of milliseconds between executions, if 0 then it renders to the monitor refresh rate
+     */
+
+    LGraph.prototype.asyncStart =function(interval) {
+        if (this.status == LGraph.STATUS_RUNNING) {
+            return;
+        }
+        this.status = LGraph.STATUS_RUNNING;
+
+        if (this.onPlayEvent) {
+            this.onPlayEvent();
+        }
+
+        this.sendEventToAllNodes("onStart");
+
+        //launch
+        this.starttime = LiteGraph.getTime();
+        this.last_update_time = this.starttime;
+        interval = interval || 0;
+        var that = this;
+
+		//execute once per frame
+        if ( interval == 0 && typeof window != "undefined" && window.requestAnimationFrame ) {
+            async function on_frame() {
+                if (that.execution_timer_id != -1) {
+                    return;
+                }
+                window.requestAnimationFrame(on_frame);
+				if(that.onBeforeStep)
+					that.onBeforeStep();
+                await that.asyncRunStep(1, !that.catch_errors);
+				if(that.onAfterStep)
+					that.onAfterStep();
+            }
+            this.execution_timer_id = -1;
+            on_frame();
+        } else { //execute every 'interval' ms
+            this.execution_timer_id = setInterval(async function() {
+                //execute
+				if(that.onBeforeStep)
+					that.onBeforeStep();
+                await that.asyncRunStep(1, !that.catch_errors);
 				if(that.onAfterStep)
 					that.onAfterStep();
             }, interval);
@@ -875,6 +939,18 @@
      */
 
     LGraph.prototype.runStep = function(num, do_not_catch_errors, limit, type ) {
+        return LiteGraph.ASYNC? this.asyncRunStep(num, do_not_catch_errors, limit, type ):this.syncRunStep(num, do_not_catch_errors, limit, type )
+    }
+
+    /**
+     * Run N steps (cycles) of the graph
+     * @method syncRunStep
+     * @param {number} num number of steps to run, default is 1
+     * @param {Boolean} do_not_catch_errors [optional] if you want to try/catch errors 
+     * @param {number} limit max number of nodes to execute (used to execute from start to a node)
+     */
+
+    LGraph.prototype.syncRunStep = function(num, do_not_catch_errors, limit, type ) {
         num = num || 1;
 
         var start = LiteGraph.getTime();
@@ -896,19 +972,6 @@
                     var node = nodes[j];
                     if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
                         node.onExecute(); //hard to send elapsed time
-                        switch (type) {
-                            case "3d":
-                                node.on3DExecute && node.on3DExecute()
-                                break;
-                            case "frame":
-                                node.onFrameExecute && node.onFrameExecute()
-                                break;
-                            case "2d":
-                                node.on2DExecute && node.on2DExecute()
-                                break;
-                            default:
-                                break;
-                        }
                     }
                 }
 
@@ -929,19 +992,93 @@
                         var node = nodes[j];
                         if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
                             node.onExecute();
-                            switch (type) {
-                                case "3d":
-                                    node.on3DExecute && node.on3DExecute()
-                                    break;
-                                case "frame":
-                                    node.onFrameExecute && node.onFrameExecute()
-                                    break;
-                                case "2d":
-                                    node.on2DExecute && node.on2DExecute()
-                                    break;
-                                default:
-                                    break;
-                            }
+                        }
+                    }
+
+                    this.fixedtime += this.fixedtime_lapse;
+                    if (this.onExecuteStep) {
+                        this.onExecuteStep();
+                    }
+                }
+
+                if (this.onAfterExecute) {
+                    this.onAfterExecute();
+                }
+                this.errors_in_execution = false;
+            } catch (err) {
+                this.errors_in_execution = true;
+                if (LiteGraph.throw_errors) {
+                    throw err;
+                }
+                if (LiteGraph.debug) {
+                    console.log("Error during execution: " + err);
+                }
+                this.stop();
+            }
+        }
+
+        var now = LiteGraph.getTime();
+        var elapsed = now - start;
+        if (elapsed == 0) {
+            elapsed = 1;
+        }
+        this.execution_time = 0.001 * elapsed;
+        this.globaltime += 0.001 * elapsed;
+        this.iteration += 1;
+        this.elapsed_time = (now - this.last_update_time) * 0.001;
+        this.last_update_time = now;
+    };
+
+    /**
+     * Run N steps (cycles) of the graph
+     * @method asyncRunStep
+     * @param {number} num number of steps to run, default is 1
+     * @param {Boolean} do_not_catch_errors [optional] if you want to try/catch errors 
+     * @param {number} limit max number of nodes to execute (used to execute from start to a node)
+     */
+
+    LGraph.prototype.asyncRunStep = async function(num, do_not_catch_errors, limit, type ) {
+        num = num || 1;
+
+        var start = LiteGraph.getTime();
+        this.globaltime = 0.001 * (start - this.starttime);
+
+        var nodes = this._nodes_executable
+            ? this._nodes_executable
+            : this._nodes;
+        if (!nodes) {
+            return;
+        }
+
+		limit = limit || nodes.length;
+
+        if (do_not_catch_errors) {
+            //iterations
+            for (var i = 0; i < num; i++) {
+                for (var j = 0; j < limit; ++j) {
+                    var node = nodes[j];
+                    if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
+                        await node.onExecute(); //hard to send elapsed time
+                    }
+                }
+
+                this.fixedtime += this.fixedtime_lapse;
+                if (this.onExecuteStep) {
+                    this.onExecuteStep();
+                }
+            }
+
+            if (this.onAfterExecute) {
+                this.onAfterExecute();
+            }
+        } else {
+            try {
+                //iterations
+                for (var i = 0; i < num; i++) {
+                    for (var j = 0; j < limit; ++j) {
+                        var node = nodes[j];
+                        if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
+                            await node.onExecute();
                         }
                     }
 
