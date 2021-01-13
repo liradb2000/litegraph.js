@@ -11,6 +11,10 @@ export default function interfaceWidget(LiteGraph) {
         this.addProperty("message", "");
         this.size = [164, 84];
         this.clicked = false;
+        this.view_info={
+            type: "button",
+            function: this.triggerSlot(0, this.properties.message)
+        }
     }
 
     WidgetButton.title = "Button";
@@ -92,6 +96,10 @@ export default function interfaceWidget(LiteGraph) {
         this.addOutput("e", LiteGraph.EVENT);
         this.properties = { font: "", value: false };
         this.size = [160, 44];
+        this.view_info={
+            type: "boolean",
+            key: "value",
+        }
     }
 
     WidgetToggle.title = "Toggle";
@@ -165,6 +173,10 @@ export default function interfaceWidget(LiteGraph) {
         this._remainder = 0;
         this._precision = 0;
         this.mouse_captured = false;
+        this.view_info={
+            type: "number_slide",
+            key: "value",
+        }
     }
 
     WidgetNumber.title = "Number";
@@ -288,7 +300,11 @@ export default function interfaceWidget(LiteGraph) {
 		this.widget = this.addWidget("combo","", this.properties.value, function(v){
 			that.properties.value = v;
             that.triggerSlot(1, v);
-		}, { property: "value", values: this._values } );
+        }, { property: "value", values: this._values } );
+        this.view_info={
+            type: "combo",
+            key: "value",
+        }
     }
 
     WidgetCombo.title = "Combo";
@@ -326,6 +342,10 @@ export default function interfaceWidget(LiteGraph) {
             precision: 2
         };
         this.value = -1;
+        this.view_info={
+            type: "number_slide",
+            key: "value",
+        }
     }
 
     WidgetKnob.title = "Knob";
@@ -496,6 +516,10 @@ export default function interfaceWidget(LiteGraph) {
             this.properties
         );
         this.widgets_up = true;
+        this.view_info={
+            type: "number_slide",
+            key: "value",
+        }
     }
 
     WidgetSliderGUI.title = "Inner Slider";
@@ -518,6 +542,10 @@ export default function interfaceWidget(LiteGraph) {
         this.addOutput("", "number");
         this.properties = { color: "#7AF", min: 0, max: 1, value: 0.5 };
         this.value = -1;
+        this.view_info={
+            type: "number_slide",
+            key: "value",
+        }
     }
 
     WidgetHSlider.title = "H.Slider";

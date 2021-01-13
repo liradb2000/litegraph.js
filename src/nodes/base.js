@@ -625,6 +625,10 @@ export default function baseWidget(LiteGraph) {
         this.widget = this.addWidget("number","value",1,"value");
         this.widgets_up = true;
         this.size = [180, 30];
+        this.view_info={
+            type: "number",
+            key: "value",
+        }
     }
 
     ConstantNumber.title = "Const Number";
@@ -659,6 +663,10 @@ export default function baseWidget(LiteGraph) {
         this.widget = this.addWidget("toggle","value",true,"value");
         this.widgets_up = true;
         this.size = [140, 30];
+        this.view_info={
+            type: "boolean",
+            key: "value",
+        }
     }
 
     ConstantBoolean.title = "Const Boolean";
@@ -688,6 +696,10 @@ export default function baseWidget(LiteGraph) {
         this.widget = this.addWidget("text","value","","value");  //link to property value
         this.widgets_up = true;
         this.size = [180, 30];
+        this.view_info={
+            type: "string",
+            key: "value",
+        }
     }
 
     ConstantString.title = "Const String";
@@ -835,6 +847,10 @@ export default function baseWidget(LiteGraph) {
         this.widgets_up = true;
         this.size = [140, 30];
         this._value = null;
+        this.view_info={
+            type: "object",
+            key: "value",
+        }
     }
 
     ConstantData.title = "Const Data";
@@ -872,6 +888,10 @@ export default function baseWidget(LiteGraph) {
         this.widget = this.addWidget("text","array",this.properties.value,"value");
         this.widgets_up = true;
         this.size = [140, 50];
+        this.view_info={
+            type: "array",
+            key: "value",
+        }
     }
 
     ConstantArray.title = "Const Array";
@@ -1186,7 +1206,11 @@ export default function baseWidget(LiteGraph) {
 			if(!that.value)
 				return;
 			that.downloadAsFile();
-		});
+        });
+        this.view_info={
+            type: "button",
+            function: that.downloadAsFile,
+        }
     }
 
     DownloadData.title = "Download";
