@@ -2,10 +2,21 @@
 export default function stringWidget(LiteGraph) {
 
     function toString(a) {
+		if(a && a.constructor === Object)
+		{
+			try
+			{
+				return JSON.stringify(a);
+			}
+			catch (err)
+			{
+				return String(a);
+			}
+		}
         return String(a);
     }
 
-    LiteGraph.wrapFunctionAsNode("string/toString", compare, [""], "String");
+    LiteGraph.wrapFunctionAsNode("string/toString", toString, [""], "String");
 
     function compare(a, b) {
         return a == b;
