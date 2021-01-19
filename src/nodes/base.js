@@ -843,10 +843,17 @@ export default function baseWidget(LiteGraph) {
     function ConstantData() {
         this.addOutput("", "");
         this.addProperty("value", "");
-        this.widget = this.addWidget("text","json","","value");
+        var that = this;
+        this.widget = this.addWidget(
+            "text",
+            "json",
+            this.properties.value,
+            function(v){
+                that.setProperty("value", v);
+            }
+        );
         this.widgets_up = true;
         this.size = [140, 30];
-        this._value = null;
         this.view_info={
             type: "object",
             key: "value",
@@ -857,21 +864,30 @@ export default function baseWidget(LiteGraph) {
     ConstantData.desc = "Constant Data";
 
     ConstantData.prototype.onPropertyChanged = function(name, value) {
-        this.widget.value = value;
         if (value == null || value == "") {
+            this.widget.value = "";
+            this.properties.value = null;
             return;
         }
 
-        try {
-            this._value = JSON.parse(value);
-            this.boxcolor = "#AEA";
-        } catch (err) {
-            this.boxcolor = "red";
+        if (value.constructor === String) {
+            this.widget.value = value;
+            try {
+                this.properties.value = JSON.parse(value);
+                this.boxcolor = "#AEA";
+            } catch (err) {
+                this.boxcolor = "red";
+            }
+            return;
         }
+
+        this.widget.value = JSON.stringify(value);
+        this.properties.value = value;
+        this.boxcolor = "#AEA";
     };
 
     ConstantData.prototype.onExecute = function() {
-        this.setOutputData(0, this._value);
+        this.setOutputData(0, this.properties.value);
     };
 
 	ConstantData.prototype.setValue = ConstantNumber.prototype.setValue;

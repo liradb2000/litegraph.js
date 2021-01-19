@@ -13,7 +13,7 @@ export default function interfaceWidget(LiteGraph) {
         this.clicked = false;
         this.view_info={
             type: "button",
-            function: this.triggerSlot(0, this.properties.message)
+            function: () => this.triggerSlot(0, this.properties.message)
         }
     }
 
