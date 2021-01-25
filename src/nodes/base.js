@@ -843,14 +843,11 @@ export default function baseWidget(LiteGraph) {
     function ConstantData() {
         this.addOutput("", "");
         this.addProperty("value", "");
-        var that = this;
         this.widget = this.addWidget(
             "text",
             "json",
             this.properties.value,
-            function(v){
-                that.setProperty("value", v);
-            }
+            this.setValue.bind(this)
         );
         this.widgets_up = true;
         this.size = [140, 30];
