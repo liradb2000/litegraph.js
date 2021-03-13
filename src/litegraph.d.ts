@@ -604,6 +604,7 @@ export declare class LGraphNode {
     graph_version: number;
     pos: Vector2;
     is_selected: boolean;
+    mouseOver: boolean;
 
     id: number;
 
@@ -650,6 +651,8 @@ export declare class LGraphNode {
     resizable: boolean;
     /** slots are distributed horizontally */
     horizontal: boolean;
+    /** if true, the node will show the bgcolor as 'red'  */
+    has_errors?: boolean;
 
     /** configure a node from an object containing the serialized info */
     configure(info: SerializedLGraphNode): void;
@@ -863,7 +866,7 @@ export declare class LGraphNode {
      * @param target_node the target node to which this slot is connected [Optional, if not target_node is specified all nodes will be disconnected]
      * @return if it was disconnected successfully
      */
-    disconnectOutput(slot: number | string, targetNode: LGraphNode): boolean;
+    disconnectOutput(slot: number | string, targetNode?: LGraphNode): boolean;
     /**
      * disconnect one input
      * @param slot (could be the number of the slot or the string with the name of the slot)
@@ -1007,6 +1010,15 @@ export declare class LGraphNode {
         link: LLink,
         ioSlot: (INodeOutputSlot | INodeInputSlot)
     ): void;                           
+
+    /**
+     * if returns false, will abort the `LGraphNode.setProperty`
+     * Called when a property is changed
+     * @param property
+     * @param value
+     * @param prevValue
+     */
+    onPropertyChanged?(property: string, value: any, prevValue: any): void | boolean;
 
     /** Called by `LGraphCanvas.processContextMenu` */
     getMenuOptions?(graphCanvas: LGraphCanvas): ContextMenuItem[];
