@@ -5,3 +5,4 @@ npm-debug.log
 # Editor
 /.vscode/*
 !/.vscode/extensions.json
+*.tgz
