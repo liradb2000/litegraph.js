@@ -733,7 +733,7 @@ export default function graphicsWidget(LiteGraph) {
     // Texture Webcam *****************************************
     function ImageWebcam() {
         this.addOutput("Webcam", "image");
-        this.properties = { facingMode: "user" };
+        this.properties = { filterFacingMode: false, facingMode: "user" };
         this.boxcolor = "black";
         this.frame = 0;
     }
@@ -743,8 +743,8 @@ export default function graphicsWidget(LiteGraph) {
     ImageWebcam.is_webcam_open = false;
 
     ImageWebcam.prototype.openStream = function() {
-        if (!navigator.getUserMedia) {
-            //console.log('getUserMedia() is not supported in your browser, use chrome and enable WebRTC from about://flags');
+        if (!navigator.mediaDevices.getUserMedia) {
+            console.log('getUserMedia() is not supported in your browser, use chrome and enable WebRTC from about://flags');
             return;
         }
 
@@ -753,7 +753,7 @@ export default function graphicsWidget(LiteGraph) {
         // Not showing vendor prefixes.
         var constraints = {
             audio: false,
-            video: { facingMode: this.properties.facingMode }
+            video: !this.properties.filterFacingMode ? true : { facingMode: this.properties.facingMode }
         };
         navigator.mediaDevices
             .getUserMedia(constraints)
