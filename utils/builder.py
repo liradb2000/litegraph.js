@@ -58,7 +58,7 @@ def packJSCode(files):
               os.system("java -jar %s --js %s --js_output_file %s" % (compiler_path, src_file, "temp.js") )
         sys.stderr.write('\033[92m' + "OK\n" + '\033[0m')
     
-    os.write(f1,data)
+    os.write(f1,bytes(data,encoding="utf8"))
     os.close(f1)
     
     #print " + Compiling all..."
@@ -67,7 +67,7 @@ def packJSCode(files):
     return fullcode_path
 
 def compileAndMinify(input_path, output_path):
-    print " + Compiling and minifying..."
+    print(" + Compiling and minifying...")
     if output_path != None:
         os.system("java -jar %s --js %s --js_output_file %s" % (compiler_path, input_path, output_path) )
         sys.stderr.write(" * Stored in " + output_path + "\n");

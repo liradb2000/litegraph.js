@@ -85,6 +85,8 @@
         TRANSPARENT_TITLE: 2,
         AUTOHIDE_TITLE: 3,
 
+        ASYNC:false, //used to async to like sync
+
         proxy: null, //used to redirect calls
         node_images_path: "",
 
@@ -803,6 +805,16 @@
      */
 
     LGraph.prototype.start = function(interval) {
+        return LiteGraph.ASYNC? this.asyncStart(interval):this.syncStart(interval)
+    }
+
+    /**
+     * Starts running this graph every interval milliseconds.
+     * @method syncStart
+     * @param {number} interval amount of milliseconds between executions, if 0 then it renders to the monitor refresh rate
+     */
+
+    LGraph.prototype.syncStart = function(interval) {
         if (this.status == LGraph.STATUS_RUNNING) {
             return;
         }
@@ -829,7 +841,7 @@
                 window.requestAnimationFrame(on_frame);
 				if(that.onBeforeStep)
 					that.onBeforeStep();
-                that.runStep(1, !that.catch_errors);
+                that.syncRunStep(1, !that.catch_errors);
 				if(that.onAfterStep)
 					that.onAfterStep();
             }
@@ -840,7 +852,59 @@
                 //execute
 				if(that.onBeforeStep)
 					that.onBeforeStep();
-                that.runStep(1, !that.catch_errors);
+                that.syncRunStep(1, !that.catch_errors);
+				if(that.onAfterStep)
+					that.onAfterStep();
+            }, interval);
+        }
+    };
+
+
+    /**
+     * Starts running this graph every interval milliseconds.
+     * @method asyncStart
+     * @param {number} interval amount of milliseconds between executions, if 0 then it renders to the monitor refresh rate
+     */
+
+    LGraph.prototype.asyncStart =function(interval) {
+        if (this.status == LGraph.STATUS_RUNNING) {
+            return;
+        }
+        this.status = LGraph.STATUS_RUNNING;
+
+        if (this.onPlayEvent) {
+            this.onPlayEvent();
+        }
+
+        this.sendEventToAllNodes("onStart");
+
+        //launch
+        this.starttime = LiteGraph.getTime();
+        this.last_update_time = this.starttime;
+        interval = interval || 0;
+        var that = this;
+
+		//execute once per frame
+        if ( interval == 0 && typeof window != "undefined" && window.requestAnimationFrame ) {
+            async function on_frame() {
+                if (that.execution_timer_id != -1) {
+                    return;
+                }
+                window.requestAnimationFrame(on_frame);
+				if(that.onBeforeStep)
+					that.onBeforeStep();
+                await that.asyncRunStep(1, !that.catch_errors);
+				if(that.onAfterStep)
+					that.onAfterStep();
+            }
+            this.execution_timer_id = -1;
+            on_frame();
+        } else { //execute every 'interval' ms
+            this.execution_timer_id = setInterval(async function() {
+                //execute
+				if(that.onBeforeStep)
+					that.onBeforeStep();
+                await that.asyncRunStep(1, !that.catch_errors);
 				if(that.onAfterStep)
 					that.onAfterStep();
             }, interval);
@@ -881,7 +945,19 @@
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
 
-    LGraph.prototype.runStep = function(num, do_not_catch_errors, limit ) {
+    LGraph.prototype.runStep = function(num, do_not_catch_errors, limit, type ) {
+        return LiteGraph.ASYNC? this.asyncRunStep(num, do_not_catch_errors, limit, type ):this.syncRunStep(num, do_not_catch_errors, limit, type )
+    }
+
+    /**
+     * Run N steps (cycles) of the graph
+     * @method syncRunStep
+     * @param {number} num number of steps to run, default is 1
+     * @param {Boolean} do_not_catch_errors [optional] if you want to try/catch errors 
+     * @param {number} limit max number of nodes to execute (used to execute from start to a node)
+     */
+
+    LGraph.prototype.syncRunStep = function(num, do_not_catch_errors, limit, type ) {
         num = num || 1;
 
         var start = LiteGraph.getTime();
@@ -923,6 +999,93 @@
                         var node = nodes[j];
                         if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
                             node.onExecute();
+                        }
+                    }
+
+                    this.fixedtime += this.fixedtime_lapse;
+                    if (this.onExecuteStep) {
+                        this.onExecuteStep();
+                    }
+                }
+
+                if (this.onAfterExecute) {
+                    this.onAfterExecute();
+                }
+                this.errors_in_execution = false;
+            } catch (err) {
+                this.errors_in_execution = true;
+                if (LiteGraph.throw_errors) {
+                    throw err;
+                }
+                if (LiteGraph.debug) {
+                    console.log("Error during execution: " + err);
+                }
+                this.stop();
+            }
+        }
+
+        var now = LiteGraph.getTime();
+        var elapsed = now - start;
+        if (elapsed == 0) {
+            elapsed = 1;
+        }
+        this.execution_time = 0.001 * elapsed;
+        this.globaltime += 0.001 * elapsed;
+        this.iteration += 1;
+        this.elapsed_time = (now - this.last_update_time) * 0.001;
+        this.last_update_time = now;
+    };
+
+    /**
+     * Run N steps (cycles) of the graph
+     * @method asyncRunStep
+     * @param {number} num number of steps to run, default is 1
+     * @param {Boolean} do_not_catch_errors [optional] if you want to try/catch errors 
+     * @param {number} limit max number of nodes to execute (used to execute from start to a node)
+     */
+
+    LGraph.prototype.asyncRunStep = async function(num, do_not_catch_errors, limit, type ) {
+        num = num || 1;
+
+        var start = LiteGraph.getTime();
+        this.globaltime = 0.001 * (start - this.starttime);
+
+        var nodes = this._nodes_executable
+            ? this._nodes_executable
+            : this._nodes;
+        if (!nodes) {
+            return;
+        }
+
+		limit = limit || nodes.length;
+
+        if (do_not_catch_errors) {
+            //iterations
+            for (var i = 0; i < num; i++) {
+                for (var j = 0; j < limit; ++j) {
+                    var node = nodes[j];
+                    if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
+                        await node.onExecute(); //hard to send elapsed time
+                    }
+                }
+
+                this.fixedtime += this.fixedtime_lapse;
+                if (this.onExecuteStep) {
+                    this.onExecuteStep();
+                }
+            }
+
+            if (this.onAfterExecute) {
+                this.onAfterExecute();
+            }
+        } else {
+            try {
+                //iterations
+                for (var i = 0; i < num; i++) {
+                    for (var j = 0; j < limit; ++j) {
+                        var node = nodes[j];
+                        if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
+                            await node.onExecute();
                         }
                     }
 
@@ -4901,6 +5064,9 @@ LGraphNode.prototype.executeAction = function(action)
             this.centerOnNode(subgraph_node);
             this.selectNodes([subgraph_node]);
         }
+        // when close sub graph back to offset [0, 0] scale 1
+        this.ds.offset = [0, 0]
+        this.ds.scale = 1
     };
 
     /**
@@ -7015,92 +7181,154 @@ LGraphNode.prototype.executeAction = function(action)
      * draws the panel in the corner that shows subgraph properties
      * @method drawSubgraphPanel
      **/
-	LGraphCanvas.prototype.drawSubgraphPanel = function(ctx) {
-		var subgraph = this.graph;
-		var subnode = subgraph._subgraph_node;
-		if(!subnode)
-		{
-			console.warn("subgraph without subnode");
-			return;
-		}
+    LGraphCanvas.prototype.drawSubgraphPanel = function (ctx) {
+        var subgraph = this.graph;
+        var subnode = subgraph._subgraph_node;
+        if (!subnode) {
+            console.warn("subgraph without subnode");
+            return;
+        }
+        this.drawSubgraphPanelLeft(subgraph, subnode, ctx)
+        this.drawSubgraphPanelRight(subgraph, subnode, ctx)
+    }
+    LGraphCanvas.prototype.drawSubgraphPanelLeft = function (subgraph, subnode, ctx) {
+        var num = subnode.inputs ? subnode.inputs.length : 0;
+        var w = 200;
+        var h = Math.floor(LiteGraph.NODE_SLOT_HEIGHT * 1.6);
 
-		var num = subnode.inputs ? subnode.inputs.length : 0;
-		var w = 300;
-		var h = Math.floor(LiteGraph.NODE_SLOT_HEIGHT * 1.6);
+        ctx.fillStyle = "#111";
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.roundRect(10, 10, w, (num + 1) * h + 50, 8);
+        ctx.fill();
+        ctx.globalAlpha = 1;
 
-		ctx.fillStyle = "#111";
-		ctx.globalAlpha = 0.8;
-		ctx.beginPath();
-		ctx.roundRect(10,10,w, (num + 1) * h + 50,8 );
-		ctx.fill();
-		ctx.globalAlpha = 1;
+        ctx.fillStyle = "#888";
+        ctx.font = "14px Arial";
+        ctx.textAlign = "left";
+        ctx.fillText("Graph Inputs", 20, 34);
+        // var pos = this.mouse;
 
-		ctx.fillStyle = "#888";
-		ctx.font = "14px Arial";
-		ctx.textAlign = "left";
-		ctx.fillText( "Graph Inputs", 20, 34 );
-		var pos = this.mouse;
+        if (this.drawButton(w - 20, 20, 20, 20, "X", "#151515")) {
+            this.closeSubgraph();
+            return;
+        }
 
-		if( this.drawButton( w - 20, 20,20,20, "X", "#151515" ) )
-		{
-			this.closeSubgraph();
-			return;
-		}
+        var y = 50;
+        ctx.font = "14px Arial";
+        if (subnode.inputs)
+            for (var i = 0; i < subnode.inputs.length; ++i) {
+                var input = subnode.inputs[i];
+                if (input.not_subgraph_input)
+                    continue;
 
-		var y = 50;
-		ctx.font = "20px Arial";
-		if(subnode.inputs)
-		for(var i = 0; i < subnode.inputs.length; ++i)
-		{
-			var input = subnode.inputs[i];
-			if(input.not_subgraph_input)
-				continue;
+                //input button clicked
+                if (this.drawButton(20, y + 2, w - 20, h - 2)) {
+                    var type = subnode.constructor.input_node_type || "graph/input";
+                    this.graph.beforeChange();
+                    var newnode = LiteGraph.createNode(type);
+                    if (newnode) {
+                        subgraph.add(newnode);
+                        this.block_click = false;
+                        this.last_click_position = null;
+                        this.selectNodes([newnode]);
+                        this.node_dragged = newnode;
+                        this.dragging_canvas = false;
+                        newnode.setProperty("name", input.name);
+                        newnode.setProperty("type", input.type);
+                        this.node_dragged.pos[0] = this.graph_mouse[0] - 5;
+                        this.node_dragged.pos[1] = this.graph_mouse[1] - 5;
+                        this.graph.afterChange();
+                    }
+                    else
+                        console.error("graph input node not found:", type);
+                }
+                ctx.fillStyle = "#9C9";
+                ctx.beginPath();
+                ctx.arc(w - 16, y + h * 0.5, 5, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.fillStyle = "#AAA";
+                ctx.fillText(input.name, 30, y + h * 0.75);
+                // var tw = ctx.measureText(input.name);
+                ctx.fillStyle = "#777";
+                ctx.fillText(input.type, 130, y + h * 0.75);
+                y += h;
+            }
+        //add + button
+        if (this.drawButton(20, y + 2, w - 20, h - 2, "+", "#151515", "#222")) {
+            this.showSubgraphPropertiesDialog(subnode);
+        }
+    }
+    LGraphCanvas.prototype.drawSubgraphPanelRight = function (subgraph, subnode, ctx) {
+        var num = subnode.outputs ? subnode.outputs.length : 0;
+        var canvas_w = this.bgcanvas.width
+        var w = 200;
+        var h = Math.floor(LiteGraph.NODE_SLOT_HEIGHT * 1.6);
 
-			//input button clicked
-			if( this.drawButton( 20,y+2,w - 20, h - 2 ) )
-			{
-				var type = subnode.constructor.input_node_type || "graph/input";
-				this.graph.beforeChange();
-				var newnode = LiteGraph.createNode( type );
-				if(newnode)
-				{
-					subgraph.add( newnode );
-					this.block_click = false;
-					this.last_click_position = null;
-					this.selectNodes([newnode]);
-					this.node_dragged = newnode;
-					this.dragging_canvas = false;
-					newnode.setProperty("name",input.name);
-					newnode.setProperty("type",input.type);
-					this.node_dragged.pos[0] = this.graph_mouse[0] - 5;
-					this.node_dragged.pos[1] = this.graph_mouse[1] - 5;
-					this.graph.afterChange();
-				}
-				else
-					console.error("graph input node not found:",type);
-			}
+        ctx.fillStyle = "#111";
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.roundRect(canvas_w - w - 10, 10, w, (num + 1) * h + 50, 8);
+        ctx.fill();
+        ctx.globalAlpha = 1;
 
-			ctx.fillStyle = "#9C9";
-			ctx.beginPath();
-			ctx.arc(w - 16,y + h * 0.5,5,0,2*Math.PI);
-			ctx.fill();
+        ctx.fillStyle = "#888";
+        ctx.font = "14px Arial";
+        ctx.textAlign = "left";
+        var title_text = "Graph Outputs"
+        var tw = ctx.measureText(title_text).width
+        ctx.fillText(title_text, (canvas_w - tw) - 20, 34);
+        // var pos = this.mouse;
+        if (this.drawButton(canvas_w - w, 20, 20, 20, "X", "#151515")) {
+            this.closeSubgraph();
+            return;
+        }
 
-			ctx.fillStyle = "#AAA";
-			ctx.fillText( input.name, 50, y + h*0.75 );
-			var tw = ctx.measureText( input.name );
-			ctx.fillStyle = "#777";
-			ctx.fillText( input.type, 50 + tw.width + 10, y + h*0.75 );
+        var y = 50;
+        ctx.font = "14px Arial";
+        if (subnode.outputs)
+            for (var i = 0; i < subnode.outputs.length; ++i) {
+                var output = subnode.outputs[i];
+                if (output.not_subgraph_input)
+                    continue;
 
-			y += h;
-		}
-
-		//add + button
-		if( this.drawButton( 20,y+2,w - 20, h - 2, "+", "#151515", "#222" ) )
-		{
-			this.showSubgraphPropertiesDialog( subnode );
-		}
-	}
-
+                //output button clicked
+                if (this.drawButton(canvas_w - w, y + 2, w - 20, h - 2)) {
+                    var type = subnode.constructor.output_node_type || "graph/output";
+                    this.graph.beforeChange();
+                    var newnode = LiteGraph.createNode(type);
+                    if (newnode) {
+                        subgraph.add(newnode);
+                        this.block_click = false;
+                        this.last_click_position = null;
+                        this.selectNodes([newnode]);
+                        this.node_dragged = newnode;
+                        this.dragging_canvas = false;
+                        newnode.setProperty("name", output.name);
+                        newnode.setProperty("type", output.type);
+                        this.node_dragged.pos[0] = this.graph_mouse[0] - 5;
+                        this.node_dragged.pos[1] = this.graph_mouse[1] - 5;
+                        this.graph.afterChange();
+                    }
+                    else
+                        console.error("graph input node not found:", type);
+                }
+                ctx.fillStyle = "#9C9";
+                ctx.beginPath();
+                ctx.arc(canvas_w - w + 16, y + h * 0.5, 5, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.fillStyle = "#AAA";
+                ctx.fillText(output.name, canvas_w - w + 30, y + h * 0.75);
+                // var tw = ctx.measureText(input.name);
+                ctx.fillStyle = "#777";
+                ctx.fillText(output.type, canvas_w - w + 130, y + h * 0.75);
+                y += h;
+            }
+        //add + button
+        if (this.drawButton(canvas_w - w, y + 2, w - 20, h - 2, "+", "#151515", "#222")) {
+            this.showSubgraphPropertiesDialogRight(subnode);
+        }
+    }
 	//Draws a button into the canvas overlay and computes if it was clicked using the immediate gui paradigm
 	LGraphCanvas.prototype.drawButton = function( x,y,w,h, text, bgcolor, hovercolor, textcolor )
 	{
@@ -7867,7 +8095,7 @@ LGraphNode.prototype.executeAction = function(action)
             ctx.fill();
 
 			//separator
-			if(!node.flags.collapsed)
+			if(!node.flags.collapsed && render_title)
 			{
 				ctx.shadowColor = "transparent";
 				ctx.fillStyle = "rgba(0,0,0,0.2)";
@@ -10574,7 +10802,67 @@ LGraphNode.prototype.executeAction = function(action)
 	    this.canvas.parentNode.appendChild(panel);
 		return panel;
 	}
+    LGraphCanvas.prototype.showSubgraphPropertiesDialogRight = function (node) {
 
+        // console.log("showing subgraph properties dialog");
+        var that = this;
+        // old_panel if old_panel is exist close it
+        var old_panel = this.canvas.parentNode.querySelector(".subgraph_dialog");
+        if (old_panel)
+            old_panel.close();
+        // new panel
+        var panel = this.createPanel("Subgraph Outputs", { closable: true, width: 500 });
+        panel.node = node;
+        panel.classList.add("subgraph_dialog");
+
+        function inner_refresh() {
+            panel.clear();
+            //show currents
+            if (node.outputs)
+                for (var i = 0; i < node.outputs.length; ++i) {
+                    var input = node.outputs[i];
+                    if (input.not_subgraph_output)
+                        continue;
+                    var html = "<button>&#10005;</button> <span class='bullet_icon'></span><span class='name'></span><span class='type'></span>";
+                    var elem = panel.addHTML(html, "subgraph_property");
+                    elem.dataset["name"] = input.name;
+                    elem.dataset["slot"] = i;
+                    elem.querySelector(".name").innerText = input.name;
+                    elem.querySelector(".type").innerText = input.type;
+                    elem.querySelector("button").addEventListener("click", function (e) {
+                        node.removeOutput(Number(this.parentNode.dataset["slot"]));
+                        inner_refresh();
+                    });
+                }
+        }
+
+        //add extra
+        var html = " + <span class='label'>Name</span><input class='name'/><span class='label'>Type</span><input class='type'></input><button>+</button>";
+        var elem = panel.addHTML(html, "subgraph_property extra", true);
+        elem.querySelector(".name").addEventListener("keydown", function (e) {
+            if (e.keyCode == 13) {
+                addOutput.apply(this)
+            }
+        })
+        elem.querySelector("button").addEventListener("click", function (e) {
+            addOutput.apply(this)
+        });
+        function addOutput() {
+            var elem = this.parentNode;
+            var name = elem.querySelector(".name").value;
+            var type = elem.querySelector(".type").value;
+            if (!name || node.findOutputSlot(name) != -1)
+                return;
+            node.addOutput(name, type);
+            elem.querySelector(".name").value = "";
+            elem.querySelector(".type").value = "";
+            inner_refresh();
+        }
+
+        inner_refresh();
+        this.canvas.parentNode.appendChild(panel);
+        return panel;
+    }
 	LGraphCanvas.prototype.checkPanels = function()
 	{
 		if(!this.canvas)
@@ -11964,9 +12252,7 @@ if (typeof exports != "undefined") {
 }
 
 //basic nodes
-(function(global) {
-    var LiteGraph = global.LiteGraph;
-
+export default function baseWidget(LiteGraph) {
     //Constant
     function Time() {
         this.addOutput("in ms", "number");
@@ -12096,39 +12382,63 @@ if (typeof exports != "undefined") {
         }
     };
 
-	Subgraph.prototype.onDrawBackground = function(ctx, graphcanvas, canvas, pos)
-	{
-		if(this.flags.collapsed)
-			return;
+    Subgraph.prototype.onDrawBackground = function (ctx, graphcanvas, canvas, pos) {
+        if (this.flags.collapsed)
+            return;
+        var y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
+        // button
+        var over = LiteGraph.isInsideRectangle(pos[0], pos[1], this.pos[0], this.pos[1] + y, this.size[0], LiteGraph.NODE_TITLE_HEIGHT);
+        let overleft = LiteGraph.isInsideRectangle(pos[0], pos[1], this.pos[0], this.pos[1] + y, this.size[0] / 2, LiteGraph.NODE_TITLE_HEIGHT)
+        ctx.fillStyle = over ? "#555" : "#222";
+        ctx.beginPath();
+        if (this._shape == LiteGraph.BOX_SHAPE) {
+            if (overleft) {
+                ctx.rect(0, y, this.size[0] / 2 + 1, LiteGraph.NODE_TITLE_HEIGHT);
+            } else {
+                ctx.rect(this.size[0] / 2, y, this.size[0] / 2 + 1, LiteGraph.NODE_TITLE_HEIGHT);
+            }
+        }
+        else {
+            if (overleft) {
+                ctx.roundRect(0, y, this.size[0] / 2 + 1, LiteGraph.NODE_TITLE_HEIGHT, 0, 8);
+            } else {
+                ctx.roundRect(this.size[0] / 2, y, this.size[0] / 2 + 1, LiteGraph.NODE_TITLE_HEIGHT, 0, 8);
+            }
+        }
+        if (over) {
+            ctx.fill();
+        } else {
+            ctx.fillRect(0, y, this.size[0] + 1, LiteGraph.NODE_TITLE_HEIGHT);
+        }
+        // button
+        ctx.textAlign = "center";
+        ctx.font = "24px Arial";
+        ctx.fillStyle = over ? "#DDD" : "#999";
+        ctx.fillText("+", this.size[0] * 0.25, y + 24);
+        ctx.fillText("+", this.size[0] * 0.75, y + 24);
+    }
 
-		var y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
-
-		//button
-		var over = LiteGraph.isInsideRectangle(pos[0],pos[1],this.pos[0],this.pos[1] + y,this.size[0],LiteGraph.NODE_TITLE_HEIGHT);
-		ctx.fillStyle = over ? "#555" : "#222";
-		ctx.beginPath();
-		if (this._shape == LiteGraph.BOX_SHAPE)
-			ctx.rect(0, y, this.size[0]+1, LiteGraph.NODE_TITLE_HEIGHT);
-		else
-			ctx.roundRect( 0, y, this.size[0]+1, LiteGraph.NODE_TITLE_HEIGHT, 0, 8);
-		ctx.fill();
-
-		//button
-		ctx.textAlign = "center";
-		ctx.font = "24px Arial";
-		ctx.fillStyle = over ? "#DDD" : "#999";
-		ctx.fillText( "+", this.size[0] * 0.5, y + 24 );
-	}
-
-	Subgraph.prototype.onMouseDown = function(e, localpos, graphcanvas)
-	{
-		var y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
-		if(localpos[1] > y)
-		{
-			graphcanvas.showSubgraphPropertiesDialog(this);
-		}
-	}
-
+    // Subgraph.prototype.onMouseDown = function(e, localpos, graphcanvas)
+    // {
+    // 	var y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
+    // 	if(localpos[1] > y)
+    // 	{
+    // 		graphcanvas.showSubgraphPropertiesDialog(this);
+    // 	}
+    // }
+    Subgraph.prototype.onMouseDown = function (e, localpos, graphcanvas) {
+        var y = this.size[1] - LiteGraph.NODE_TITLE_HEIGHT + 0.5;
+        console.log(0)
+        if (localpos[1] > y) {
+            if (localpos[0] < this.size[0] / 2) {
+                console.log(1)
+                graphcanvas.showSubgraphPropertiesDialog(this);
+            } else {
+                console.log(2)
+                graphcanvas.showSubgraphPropertiesDialogRight(this);
+            }
+        }
+    }
 	Subgraph.prototype.computeSize = function()
 	{
 		var num_inputs = this.inputs ? this.inputs.length : 0;
@@ -12506,48 +12816,48 @@ if (typeof exports != "undefined") {
         this.properties = {};
         var that = this;
 
-        Object.defineProperty(this.properties, "name", {
-            get: function() {
-                return that.name_in_graph;
-            },
-            set: function(v) {
-                if (v == "" || v == that.name_in_graph) {
-                    return;
-                }
-                if (that.name_in_graph) {
-                    //already added
-                    that.graph.renameOutput(that.name_in_graph, v);
-                } else {
-                    that.graph.addOutput(v, that.properties.type);
-                }
-                that.name_widget.value = v;
-                that.name_in_graph = v;
-            },
-            enumerable: true
-        });
+        // Object.defineProperty(this.properties, "name", {
+        //     get: function() {
+        //         return that.name_in_graph;
+        //     },
+        //     set: function(v) {
+        //         if (v == "" || v == that.name_in_graph) {
+        //             return;
+        //         }
+        //         if (that.name_in_graph) {
+        //             //already added
+        //             that.graph.renameOutput(that.name_in_graph, v);
+        //         } else {
+        //             that.graph.addOutput(v, that.properties.type);
+        //         }
+        //         that.name_widget.value = v;
+        //         that.name_in_graph = v;
+        //     },
+        //     enumerable: true
+        // });
 
-        Object.defineProperty(this.properties, "type", {
-            get: function() {
-                return that.inputs[0].type;
-            },
-            set: function(v) {
-                if (v == "action" || v == "event") {
-                    v = LiteGraph.ACTION;
-                }
-		        if (!LiteGraph.isValidConnection(that.inputs[0].type,v))
-					that.disconnectInput(0);
-                that.inputs[0].type = v;
-                if (that.name_in_graph) {
-                    //already added
-                    that.graph.changeOutputType(
-                        that.name_in_graph,
-                        that.inputs[0].type
-                    );
-                }
-                that.type_widget.value = v || "";
-            },
-            enumerable: true
-        });
+        // Object.defineProperty(this.properties, "type", {
+        //     get: function() {
+        //         return that.inputs[0].type;
+        //     },
+        //     set: function(v) {
+        //         if (v == "action" || v == "event") {
+        //             v = LiteGraph.ACTION;
+        //         }
+		//         if (!LiteGraph.isValidConnection(that.inputs[0].type,v))
+		// 			that.disconnectInput(0);
+        //         that.inputs[0].type = v;
+        //         if (that.name_in_graph) {
+        //             //already added
+        //             that.graph.changeOutputType(
+        //                 that.name_in_graph,
+        //                 that.inputs[0].type
+        //             );
+        //         }
+        //         that.type_widget.value = v || "";
+        //     },
+        //     enumerable: true
+        // });
 
         this.name_widget = this.addWidget("text","Name",this.properties.name,"name");
         this.type_widget = this.addWidget("text","Type",this.properties.type,"type");
@@ -12557,6 +12867,50 @@ if (typeof exports != "undefined") {
 
     GraphOutput.title = "Output";
     GraphOutput.desc = "Output of the graph";
+
+    GraphOutput.prototype.onPropertyChanged = function (name, v) {
+        if (name == "name") {
+            if (v == "" || v == this.name_in_graph || v == "enabled") {
+                return false;
+            }
+            if (this.graph) {
+                if (this.name_in_graph) {
+                    //already added
+                    this.graph.renameOutput(this.name_in_graph, v);
+                } else {
+                    this.graph.addOutput(v, this.properties.type);
+                }
+            } //what if not?!
+            this.name_widget.value = v;
+            this.name_in_graph = v;
+        }
+        else if (name == "type") {
+            this.updateType();
+        }
+        else if (name == "value") {
+        }
+    }
+      
+      
+    GraphOutput.prototype.updateType = function () {
+        var type = this.properties.type;
+        if (this.type_widget)
+            this.type_widget.value = type;
+
+        //update output
+        if (this.inputs[0].type != type) {
+            if (!LiteGraph.isValidConnection(this.inputs[0].type, type))
+                this.disconnectInput(0);
+            this.inputs[0].type = type;
+        }
+
+        //update graph
+        if (this.graph && this.name_in_graph) {
+            this.graph.changeOutputType(this.name_in_graph, type);
+        }
+    }
+
+
 
     GraphOutput.prototype.onExecute = function() {
         this._value = this.getInputData(0);
@@ -12592,6 +12946,10 @@ if (typeof exports != "undefined") {
         this.widget = this.addWidget("number","value",1,"value");
         this.widgets_up = true;
         this.size = [180, 30];
+        this.view_info={
+            type: "number",
+            key: "value",
+        }
     }
 
     ConstantNumber.title = "Const Number";
@@ -12626,6 +12984,10 @@ if (typeof exports != "undefined") {
         this.widget = this.addWidget("toggle","value",true,"value");
         this.widgets_up = true;
         this.size = [140, 30];
+        this.view_info={
+            type: "boolean",
+            key: "value",
+        }
     }
 
     ConstantBoolean.title = "Const Boolean";
@@ -12655,6 +13017,10 @@ if (typeof exports != "undefined") {
         this.widget = this.addWidget("text","value","","value");  //link to property value
         this.widgets_up = true;
         this.size = [180, 30];
+        this.view_info={
+            type: "string",
+            key: "value",
+        }
     }
 
     ConstantString.title = "Const String";
@@ -12798,31 +13164,48 @@ if (typeof exports != "undefined") {
     function ConstantData() {
         this.addOutput("", "");
         this.addProperty("value", "");
-        this.widget = this.addWidget("text","json","","value");
+        this.widget = this.addWidget(
+            "text",
+            "json",
+            this.properties.value,
+            this.setValue.bind(this)
+        );
         this.widgets_up = true;
         this.size = [140, 30];
-        this._value = null;
+        this.view_info={
+            type: "object",
+            key: "value",
+        }
     }
 
     ConstantData.title = "Const Data";
     ConstantData.desc = "Constant Data";
 
     ConstantData.prototype.onPropertyChanged = function(name, value) {
-        this.widget.value = value;
         if (value == null || value == "") {
+            this.widget.value = "";
+            this.properties.value = null;
             return;
         }
 
-        try {
-            this._value = JSON.parse(value);
-            this.boxcolor = "#AEA";
-        } catch (err) {
-            this.boxcolor = "red";
+        if (value.constructor === String) {
+            this.widget.value = value;
+            try {
+                this.properties.value = JSON.parse(value);
+                this.boxcolor = "#AEA";
+            } catch (err) {
+                this.boxcolor = "red";
+            }
+            return;
         }
+
+        this.widget.value = JSON.stringify(value);
+        this.properties.value = value;
+        this.boxcolor = "#AEA";
     };
 
     ConstantData.prototype.onExecute = function() {
-        this.setOutputData(0, this._value);
+        this.setOutputData(0, this.properties.value);
     };
 
 	ConstantData.prototype.setValue = ConstantNumber.prototype.setValue;
@@ -12839,6 +13222,10 @@ if (typeof exports != "undefined") {
         this.widget = this.addWidget("text","array",this.properties.value,"value");
         this.widgets_up = true;
         this.size = [140, 50];
+        this.view_info={
+            type: "array",
+            key: "value",
+        }
     }
 
     ConstantArray.title = "Const Array";
@@ -13153,7 +13540,11 @@ if (typeof exports != "undefined") {
 			if(!that.value)
 				return;
 			that.downloadAsFile();
-		});
+        });
+        this.view_info={
+            type: "button",
+            function: that.downloadAsFile,
+        }
     }
 
     DownloadData.title = "Download";
@@ -13418,11 +13809,10 @@ if (typeof exports != "undefined") {
     };
 
     LiteGraph.registerNodeType("basic/script", NodeScript);
-})(this);
+};
 
 //event related nodes
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function eventWidget(LiteGraph) {
 
     //Show value inside the debug console
     function LogEvent() {
@@ -13776,10 +14166,9 @@ if (typeof exports != "undefined") {
 	}
 
     LiteGraph.registerNodeType("basic/data_store", DataStore);
-})(this);
+};
 
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function inputWidget(LiteGraph) {
 
     function GamepadInput() {
         this.addOutput("left_x_axis", "number");
@@ -14130,10 +14519,9 @@ if (typeof exports != "undefined") {
     };
 
     LiteGraph.registerNodeType("input/gamepad", GamepadInput);
-})(this);
+};
 
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function mathWidget(LiteGraph) {
 
     //Converter
     function Converter() {
@@ -15460,11 +15848,10 @@ if (typeof exports != "undefined") {
 
     LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
 
-})(this);
+}
 
 //basic nodes
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function stringWidget(LiteGraph) {
 
     function toString(a) {
 		if(a && a.constructor === Object)
@@ -15609,10 +15996,9 @@ if (typeof exports != "undefined") {
 
     LiteGraph.registerNodeType("string/toTable", StringToTable);
 
-})(this);
+};
 
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function logicWidget(LiteGraph) {
 
     function Selector() {
         this.addInput("sel", "number");
@@ -15695,11 +16081,10 @@ if (typeof exports != "undefined") {
     };
 
     LiteGraph.registerNodeType("logic/sequence", Sequence);
-})(this);
+};
 
 //event related nodes
-(function(global) {
-    var LiteGraph = global.LiteGraph;
+export default function networkWidget(LiteGraph) {
 
     function LGWebSocket() {
         this.size = [60, 20];
@@ -16061,5 +16446,5 @@ if (typeof exports != "undefined") {
     };
 
     LiteGraph.registerNodeType("network/sillyclient", LGSillyClient);
-})(this);
+};
 
