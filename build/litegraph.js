@@ -12348,7 +12348,7 @@ export default function baseWidget(LiteGraph) {
         this.subgraph.onAction(action, param);
     };
 
-    Subgraph.prototype.onExecute = function() {
+    Subgraph.prototype.onExecute = async function() {
         this.enabled = this.getInputOrProperty("enabled");
         if (!this.enabled) {
             return;
@@ -12364,7 +12364,7 @@ export default function baseWidget(LiteGraph) {
         }
 
         //execute
-        this.subgraph.runStep();
+        await this.subgraph.runStep();
 
         //send subgraph global outputs to outputs
         if (this.outputs) {
