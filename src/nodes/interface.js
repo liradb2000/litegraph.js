@@ -302,7 +302,7 @@ export default function interfaceWidget(LiteGraph) {
             that.triggerSlot(1, v);
         }, { property: "value", values: this._values } );
         this.view_info={
-            type: "option",
+            type: "options",
             key: "value",
             options: {
                 option_list: "values"
