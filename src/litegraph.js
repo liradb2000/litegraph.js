@@ -1,3 +1,4 @@
+
 (function(global) {
     // *************************************************************
     //   LiteGraph CLASS                                     *******
@@ -55,6 +56,7 @@
         CIRCLE_SHAPE: 3,
         CARD_SHAPE: 4,
         ARROW_SHAPE: 5,
+        GRID_SHAPE: 6, // intended for slot arrays
 
         //enums
         INPUT: 1,
@@ -63,6 +65,8 @@
         EVENT: -1, //for outputs
         ACTION: -1, //for inputs
 
+        NODE_MODES: ["Always", "On Event", "Never", "On Trigger"], // helper, will add "On Request" and more in the future
+        NODE_MODES_COLORS:["#666","#422","#333","#224","#626"], // use with node_box_coloured_by_mode
         ALWAYS: 0,
         ON_EVENT: 1,
         NEVER: 2,
@@ -74,6 +78,7 @@
         RIGHT: 4,
         CENTER: 5,
 
+        LINK_RENDER_MODES: ["Straight", "Linear", "Spline"], // helper
         STRAIGHT_LINK: 0,
         LINEAR_LINK: 1,
         SPLINE_LINK: 2,
@@ -82,6 +87,7 @@
         NO_TITLE: 1,
         TRANSPARENT_TITLE: 2,
         AUTOHIDE_TITLE: 3,
+        VERTICAL_LAYOUT: "vertical", // arrange nodes vertically
 
         ASYNC:false, //used to async to like sync
 
@@ -98,7 +104,43 @@
 		Globals: {}, //used to store vars between graphs
 
         searchbox_extras: {}, //used to add extra features to the search box
-        auto_sort_node_types: false, // If set to true, will automatically sort node types / categories in the context menus
+        auto_sort_node_types: false, // [true!] If set to true, will automatically sort node types / categories in the context menus
+		
+		node_box_coloured_when_on: false, // [true!] this make the nodes box (top left circle) coloured when triggered (execute/action), visual feedback
+        node_box_coloured_by_mode: false, // [true!] nodebox based on node mode, visual feedback
+        
+        dialog_close_on_mouse_leave: true, // [false on mobile] better true if not touch device, TODO add an helper/listener to close if false
+        dialog_close_on_mouse_leave_delay: 500,
+        
+        shift_click_do_break_link_from: false, // [false!] prefer false if results too easy to break links - implement with ALT or TODO custom keys
+        click_do_break_link_to: false, // [false!]prefer false, way too easy to break links
+        
+        search_hide_on_mouse_leave: true, // [false on mobile] better true if not touch device, TODO add an helper/listener to close if false
+        search_filter_enabled: false, // [true!] enable filtering slots type in the search widget, !requires auto_load_slot_types or manual set registered_slot_[in/out]_types and slot_types_[in/out]
+        search_show_all_on_open: true, // [true!] opens the results list when opening the search widget
+        
+        auto_load_slot_types: false, // [if want false, use true, run, get vars values to be statically set, than disable] nodes types and nodeclass association with node types need to be calculated, if dont want this, calculate once and set registered_slot_[in/out]_types and slot_types_[in/out]
+        
+		// set these values if not using auto_load_slot_types
+        registered_slot_in_types: {}, // slot types for nodeclass
+        registered_slot_out_types: {}, // slot types for nodeclass
+        slot_types_in: [], // slot types IN
+        slot_types_out: [], // slot types OUT
+        slot_types_default_in: [], // specify for each IN slot type a(/many) deafult node(s), use single string, array, or object (with node, title, parameters, ..) like for search
+		slot_types_default_out: [], // specify for each OUT slot type a(/many) deafult node(s), use single string, array, or object (with node, title, parameters, ..) like for search
+		
+		alt_drag_do_clone_nodes: false, // [true!] very handy, ALT click to clone and drag the new node
+
+		do_add_triggers_slots: false, // [true!] will create and connect event slots when using action/events connections, !WILL CHANGE node mode when using onTrigger (enable mode colors), onExecuted does not need this
+		
+		allow_multi_output_for_events: true, // [false!] being events, it is strongly reccomended to use them sequentually, one by one
+
+		middle_click_slot_add_default_node: false, //[true!] allows to create and connect a ndoe clicking with the third button (wheel)
+		
+		release_link_on_empty_shows_menu: false, //[true!] dragging a link to empty space will open a menu, add from list, search or defaults
+		
+        pointerevents_method: "mouse", // "mouse"|"pointer" use mouse for retrocompatibility issues? (none found @ now)
+        // TODO implement pointercancel, gotpointercapture, lostpointercapture, (pointerover, pointerout if necessary)
 
         /**
          * Register a node class so it can be listed when the user wants to create a new one
@@ -220,6 +262,10 @@
 	                    this.node_types_by_file_extension[ ext.toLowerCase() ] = base_class;
                 }
             }
+            
+            // TODO one would want to know input and ouput :: this would allow trought registerNodeAndSlotType to get all the slots types
+            //console.debug("Registering "+type);
+            if (this.auto_load_slot_types) nodeTmp = new base_class(base_class.title || "tmpnode");
         },
 
         /**
@@ -236,6 +282,50 @@
 				delete this.Nodes[base_class.constructor.name];
 		},
 
+        /**
+        * Save a slot type and his node
+        * @method registerSlotType
+        * @param {String|Object} type name of the node or the node constructor itself
+        * @param {String} slot_type name of the slot type (variable type), eg. string, number, array, boolean, ..
+        */
+        registerNodeAndSlotType: function(type,slot_type,out){
+            out = out || false;
+            var base_class = type.constructor === String && this.registered_node_types[type] !== "anonymous" ? this.registered_node_types[type] : type;
+            
+            var sCN = base_class.constructor.type;
+            
+            if (typeof slot_type == "string"){
+                var aTypes = slot_type.split(",");
+            }else if (slot_type == this.EVENT || slot_type == this.ACTION){
+                var aTypes = ["_event_"];
+            }else{
+                var aTypes = ["*"];
+            }
+
+            for (var i = 0; i < aTypes.length; ++i) {
+                var sT = aTypes[i]; //.toLowerCase();
+                if (sT === ""){
+                    sT = "*";
+                }
+                var registerTo = out ? "registered_slot_out_types" : "registered_slot_in_types";
+                if (typeof this[registerTo][sT] == "undefined") this[registerTo][sT] = {nodes: []};
+                this[registerTo][sT].nodes.push(sCN);
+                
+                // check if is a new type
+                if (!out){
+                    if (!this.slot_types_in.includes(sT.toLowerCase())){
+                        this.slot_types_in.push(sT.toLowerCase());
+                        this.slot_types_in.sort();
+                    }
+                }else{
+                    if (!this.slot_types_out.includes(sT.toLowerCase())){
+                        this.slot_types_out.push(sT.toLowerCase());
+                        this.slot_types_out.sort();
+                    }
+                }
+            }
+        },
+        
         /**
          * Create a new nodetype by passing a function, it wraps it with a proper class and generates inputs according to the parameters of the function.
          * Useful to wrap simple methods that do not require properties, and that only process some input to generate an output.
@@ -382,6 +472,11 @@
                 }
             }
 
+			// callback
+            if ( node.onNodeCreated ) {
+                node.onNodeCreated();
+            }
+            
             return node;
         },
 
@@ -420,7 +515,7 @@
             }
 
             if (this.auto_sort_node_types) {
-                r.sort((a, b) => a.title.localeCompare(b.title));
+                r.sort(function(a,b){return a.title.localeCompare(b.title)});
             }
 
             return r;
@@ -519,11 +614,13 @@
          * @return {Boolean} true if they can be connected
          */
         isValidConnection: function(type_a, type_b) {
+			if (type_a=="" || type_a==="*") type_a = 0;
+			if (type_b=="" || type_b==="*") type_b = 0;
             if (
-                !type_a || //generic output
-                !type_b || //generic input
-                type_a == type_b || //same type (is valid for triggers)
-                (type_a == LiteGraph.EVENT && type_b == LiteGraph.ACTION)
+                !type_a //generic output
+                || !type_b // generic input
+                || type_a == type_b //same type (is valid for triggers)
+                || (type_a == LiteGraph.EVENT && type_b == LiteGraph.ACTION)
             ) {
                 return true;
             }
@@ -544,7 +641,8 @@
             var supported_types_b = type_b.split(",");
             for (var i = 0; i < supported_types_a.length; ++i) {
                 for (var j = 0; j < supported_types_b.length; ++j) {
-                    if (supported_types_a[i] == supported_types_b[j]) {
+                    if(this.isValidConnection(supported_types_a[i],supported_types_b[j])){
+					//if (supported_types_a[i] == supported_types_b[j]) {
                         return true;
                     }
                 }
@@ -746,6 +844,10 @@
 
         this.catch_errors = true;
 
+        this.nodes_executing = [];
+        this.nodes_actioning = [];
+        this.nodes_executedAction = [];
+        
         //subgraph_data
         this.inputs = {};
         this.outputs = {};
@@ -976,7 +1078,8 @@
                 for (var j = 0; j < limit; ++j) {
                     var node = nodes[j];
                     if (node.mode == LiteGraph.ALWAYS && node.onExecute) {
-                        node.onExecute(); //hard to send elapsed time
+                        //wrap node.onExecute();
+						node.doExecute();
                     }
                 }
 
@@ -1032,6 +1135,9 @@
         this.iteration += 1;
         this.elapsed_time = (now - this.last_update_time) * 0.001;
         this.last_update_time = now;
+        this.nodes_executing = [];
+        this.nodes_actioning = [];
+        this.nodes_executedAction = [];
     };
 
     /**
@@ -1316,7 +1422,7 @@
      * Positions every node in a more readable manner
      * @method arrange
      */
-    LGraph.prototype.arrange = function(margin) {
+    LGraph.prototype.arrange = function (margin, layout) {
         margin = margin || 100;
 
         var nodes = this.computeExecutionOrder(false, true);
@@ -1341,12 +1447,14 @@
             var y = margin + LiteGraph.NODE_TITLE_HEIGHT;
             for (var j = 0; j < column.length; ++j) {
                 var node = column[j];
-                node.pos[0] = x;
-                node.pos[1] = y;
-                if (node.size[0] > max_size) {
-                    max_size = node.size[0];
+                node.pos[0] = (layout == LiteGraph.VERTICAL_LAYOUT) ? y : x;
+                node.pos[1] = (layout == LiteGraph.VERTICAL_LAYOUT) ? x : y;
+                max_size_index = (layout == LiteGraph.VERTICAL_LAYOUT) ? 1 : 0;
+                if (node.size[max_size_index] > max_size) {
+                    max_size = node.size[max_size_index];
                 }
-                y += node.size[1] + margin + LiteGraph.NODE_TITLE_HEIGHT;
+                node_size_index = (layout == LiteGraph.VERTICAL_LAYOUT) ? 0 : 1;
+                y += node.size[node_size_index] + margin + LiteGraph.NODE_TITLE_HEIGHT;
             }
             x += max_size + margin;
         }
@@ -1532,7 +1640,7 @@
             return;
         } //cannot be removed
 
-		this.beforeChange(); //sure?
+		this.beforeChange(); //sure? - almost sure is wrong
 
         //disconnect inputs
         if (node.inputs) {
@@ -1592,7 +1700,7 @@
 		this.sendActionToCanvas("checkPanels");
 
         this.setDirtyCanvas(true, true);
-		this.afterChange(); //sure?
+		this.afterChange(); //sure? - almost sure is wrong
         this.change();
 
         this.updateExecutionOrder();
@@ -1687,13 +1795,19 @@
      */
     LGraph.prototype.getNodeOnPos = function(x, y, nodes_list, margin) {
         nodes_list = nodes_list || this._nodes;
+		var nRet = null;
         for (var i = nodes_list.length - 1; i >= 0; i--) {
             var n = nodes_list[i];
             if (n.isPointInside(x, y, margin)) {
-                return n;
+                // check for lesser interest nodes (TODO check for overlapping, use the top)
+				/*if (typeof n == "LGraphGroup"){
+					nRet = n;
+				}else{*/
+					return n;
+				/*}*/
             }
         }
-        return null;
+        return nRet;
     };
 
     /**
@@ -1745,7 +1859,7 @@
 
     // ********** GLOBALS *****************
 
-    LGraph.prototype.onAction = function(action, param) {
+    LGraph.prototype.onAction = function(action, param, options) {
         this._input_nodes = this.findNodesByClass(
             LiteGraph.GraphInput,
             this._input_nodes
@@ -1755,7 +1869,8 @@
             if (node.properties.name != action) {
                 continue;
             }
-            node.onAction(action, param);
+            //wrap node.onAction(action, param);
+            node.actionDo(action, param, options);
             break;
         }
     };
@@ -2517,43 +2632,34 @@
             this.title = this.constructor.title;
         }
 
-        if (this.onConnectionsChange) {
-            if (this.inputs) {
-                for (var i = 0; i < this.inputs.length; ++i) {
-                    var input = this.inputs[i];
-                    var link_info = this.graph
-                        ? this.graph.links[input.link]
-                        : null;
-                    this.onConnectionsChange(
-                        LiteGraph.INPUT,
-                        i,
-                        true,
-                        link_info,
-                        input
-                    ); //link_info has been created now, so its updated
-                }
-            }
+		if (this.inputs) {
+			for (var i = 0; i < this.inputs.length; ++i) {
+				var input = this.inputs[i];
+				var link_info = this.graph ? this.graph.links[input.link] : null;
+				if (this.onConnectionsChange)
+					this.onConnectionsChange( LiteGraph.INPUT, i, true, link_info, input ); //link_info has been created now, so its updated
 
-            if (this.outputs) {
-                for (var i = 0; i < this.outputs.length; ++i) {
-                    var output = this.outputs[i];
-                    if (!output.links) {
-                        continue;
-                    }
-                    for (var j = 0; j < output.links.length; ++j) {
-                        var link_info = this.graph
-                            ? this.graph.links[output.links[j]]
-                            : null;
-                        this.onConnectionsChange(
-                            LiteGraph.OUTPUT,
-                            i,
-                            true,
-                            link_info,
-                            output
-                        ); //link_info has been created now, so its updated
-                    }
-                }
-            }
+				if( this.onInputAdded )
+					this.onInputAdded(input);
+
+			}
+		}
+
+		if (this.outputs) {
+			for (var i = 0; i < this.outputs.length; ++i) {
+				var output = this.outputs[i];
+				if (!output.links) {
+					continue;
+				}
+				for (var j = 0; j < output.links.length; ++j) {
+					var link_info = this.graph 	? this.graph.links[output.links[j]] : null;
+					if (this.onConnectionsChange)
+						this.onConnectionsChange( LiteGraph.OUTPUT, i, true, link_info, output ); //link_info has been created now, so its updated
+				}
+
+				if( this.onOutputAdded )
+					this.onOutputAdded(output);
+			}
         }
 
 		if( this.widgets )
@@ -3097,13 +3203,130 @@
         return r;
     };
 
+    LGraphNode.prototype.addOnTriggerInput = function(){
+        var trigS = this.findInputSlot("onTrigger");
+        if (trigS == -1){ //!trigS || 
+            var input = this.addInput("onTrigger", LiteGraph.EVENT, {optional: true, nameLocked: true});
+            return this.findInputSlot("onTrigger");
+        }
+        return trigS;
+    }
+    
+    LGraphNode.prototype.addOnExecutedOutput = function(){
+        var trigS = this.findOutputSlot("onExecuted");
+        if (trigS == -1){ //!trigS || 
+            var output = this.addOutput("onExecuted", LiteGraph.ACTION, {optional: true, nameLocked: true});
+            return this.findOutputSlot("onExecuted");
+        }
+        return trigS;
+    }
+    
+    LGraphNode.prototype.onAfterExecuteNode = function(param, options){
+        var trigS = this.findOutputSlot("onExecuted");
+        if (trigS != -1){
+            
+            //console.debug(this.id+":"+this.order+" triggering slot onAfterExecute");
+            //console.debug(param);
+            //console.debug(options);
+            this.triggerSlot(trigS, param, null, options);
+            
+        }
+    }    
+    
+    LGraphNode.prototype.changeMode = function(modeTo){
+        switch(modeTo){
+            case LiteGraph.ON_EVENT:
+                // this.addOnExecutedOutput();
+                break;
+                
+            case LiteGraph.ON_TRIGGER:
+                this.addOnTriggerInput();
+                this.addOnExecutedOutput();
+                break;
+                
+            case LiteGraph.NEVER:
+                break;
+                
+            case LiteGraph.ALWAYS:
+                break;
+                
+            case LiteGraph.ON_REQUEST:
+                break;
+            
+            default:
+                return false;
+                break;
+        }
+        this.mode = modeTo;
+        return true;
+    };
+    
+    /**
+     * Triggers the node code execution, place a boolean/counter to mark the node as being executed
+     * @method execute
+     * @param {*} param
+     * @param {*} options
+     */
+    LGraphNode.prototype.doExecute = function(param, options) {
+        options = options || {};
+        if (this.onExecute){
+            
+            // enable this to give the event an ID
+			if (!options.action_call) options.action_call = this.id+"_exec_"+Math.floor(Math.random()*9999);
+            
+            this.graph.nodes_executing[this.id] = true; //.push(this.id);
+
+            this.onExecute(param, options);
+            
+            this.graph.nodes_executing[this.id] = false; //.pop();
+            
+            // save execution/action ref
+            this.exec_version = this.graph.iteration;
+            if(options && options.action_call){
+                this.action_call = options.action_call; // if (param)
+                this.graph.nodes_executedAction[this.id] = options.action_call;
+            }
+        }
+        this.execute_triggered = 2; // the nFrames it will be used (-- each step), means "how old" is the event
+        if(this.onAfterExecuteNode) this.onAfterExecuteNode(param, options); // callback
+    };
+    
+    /**
+     * Triggers an action, wrapped by logics to control execution flow
+     * @method actionDo
+     * @param {String} action name
+     * @param {*} param
+     */
+    LGraphNode.prototype.actionDo = function(action, param, options) {
+        options = options || {};
+        if (this.onAction){
+            
+			// enable this to give the event an ID
+            if (!options.action_call) options.action_call = this.id+"_"+(action?action:"action")+"_"+Math.floor(Math.random()*9999);
+            
+            this.graph.nodes_actioning[this.id] = (action?action:"actioning"); //.push(this.id);
+            
+            this.onAction(action, param, options);
+            
+            this.graph.nodes_actioning[this.id] = false; //.pop();
+            
+            // save execution/action ref
+            if(options && options.action_call){
+                this.action_call = options.action_call; // if (param)
+                this.graph.nodes_executedAction[this.id] = options.action_call;
+            }
+        }
+        this.action_triggered = 2; // the nFrames it will be used (-- each step), means "how old" is the event
+        if(this.onAfterExecuteNode) this.onAfterExecuteNode(param, options);
+    };
+    
     /**
      * Triggers an event in this node, this will trigger any output with the same name
      * @method trigger
      * @param {String} event name ( "on_play", ... ) if action is equivalent to false then the event is send to all
      * @param {*} param
      */
-    LGraphNode.prototype.trigger = function(action, param) {
+    LGraphNode.prototype.trigger = function(action, param, options) {
         if (!this.outputs || !this.outputs.length) {
             return;
         }
@@ -3115,18 +3338,19 @@
             var output = this.outputs[i];
             if ( !output || output.type !== LiteGraph.EVENT || (action && output.name != action) )
                 continue;
-            this.triggerSlot(i, param);
+            this.triggerSlot(i, param, null, options);
         }
     };
 
     /**
-     * Triggers an slot event in this node
+     * Triggers a slot event in this node: cycle output slots and launch execute/action on connected nodes
      * @method triggerSlot
      * @param {Number} slot the index of the output slot
      * @param {*} param
      * @param {Number} link_id [optional] in case you want to trigger and specific output link in a slot
      */
-    LGraphNode.prototype.triggerSlot = function(slot, param, link_id) {
+    LGraphNode.prototype.triggerSlot = function(slot, param, link_id, options) {
+        options = options || {};
         if (!this.outputs) {
             return;
         }
@@ -3169,12 +3393,20 @@
 
 			if (node.mode === LiteGraph.ON_TRIGGER)
 			{
+				// generate unique trigger ID if not present
+				if (!options.action_call) options.action_call = this.id+"_trigg_"+Math.floor(Math.random()*9999);
                 if (node.onExecute) {
-                    node.onExecute(param);
+                    // -- wrapping node.onExecute(param); --
+                    node.doExecute(param, options);
                 }
 			}
 			else if (node.onAction) {
-                node.onAction(target_connection.name, param);
+                // generate unique action ID if not present
+				if (!options.action_call) options.action_call = this.id+"_act_"+Math.floor(Math.random()*9999);
+                //pass the action name
+                var target_connection = node.inputs[link_info.target_slot];
+				// wrap node.onAction(target_connection.name, param);
+                node.actionDo(target_connection.name, param, options);
             }
         }
     };
@@ -3269,23 +3501,26 @@
      * @param {Object} extra_info this can be used to have special properties of an output (label, special color, position, etc)
      */
     LGraphNode.prototype.addOutput = function(name, type, extra_info) {
-        var o = { name: name, type: type, links: null };
+        var output = { name: name, type: type, links: null };
         if (extra_info) {
             for (var i in extra_info) {
-                o[i] = extra_info[i];
+                output[i] = extra_info[i];
             }
         }
 
         if (!this.outputs) {
             this.outputs = [];
         }
-        this.outputs.push(o);
+        this.outputs.push(output);
         if (this.onOutputAdded) {
-            this.onOutputAdded(o);
+            this.onOutputAdded(output);
         }
+        
+        if (LiteGraph.auto_load_slot_types) LiteGraph.registerNodeAndSlotType(this,type,true);
+        
         this.setSize( this.computeSize() );
         this.setDirtyCanvas(true, true);
-        return o;
+        return output;
     };
 
     /**
@@ -3310,6 +3545,9 @@
             if (this.onOutputAdded) {
                 this.onOutputAdded(o);
             }
+            
+            if (LiteGraph.auto_load_slot_types) LiteGraph.registerNodeAndSlotType(this,info[1],true);
+            
         }
 
         this.setSize( this.computeSize() );
@@ -3354,10 +3592,10 @@
      */
     LGraphNode.prototype.addInput = function(name, type, extra_info) {
         type = type || 0;
-        var o = { name: name, type: type, link: null };
+        var input = { name: name, type: type, link: null };
         if (extra_info) {
             for (var i in extra_info) {
-                o[i] = extra_info[i];
+                input[i] = extra_info[i];
             }
         }
 
@@ -3365,15 +3603,17 @@
             this.inputs = [];
         }
 
-        this.inputs.push(o);
+        this.inputs.push(input);
         this.setSize( this.computeSize() );
 
         if (this.onInputAdded) {
-            this.onInputAdded(o);
-        }
+            this.onInputAdded(input);
+		}
+        
+        LiteGraph.registerNodeAndSlotType(this,type);
 
         this.setDirtyCanvas(true, true);
-        return o;
+        return input;
     };
 
     /**
@@ -3398,6 +3638,8 @@
             if (this.onInputAdded) {
                 this.onInputAdded(o);
             }
+            
+            LiteGraph.registerNodeAndSlotType(this,info[1]);
         }
 
         this.setSize( this.computeSize() );
@@ -3468,7 +3710,6 @@
         rows = Math.max(rows, 1);
         var font_size = LiteGraph.NODE_TEXT_SIZE; //although it should be graphcanvas.inner_text_font size
 
-        var font_size = font_size;
         var title_width = compute_text_size(this.title);
         var input_width = 0;
         var output_width = 0;
@@ -3769,15 +4010,16 @@
      * returns the input slot with a given name (used for dynamic slots), -1 if not found
      * @method findInputSlot
      * @param {string} name the name of the slot
-     * @return {number} the slot (-1 if not found)
+     * @param {boolean} returnObj if the obj itself wanted
+     * @return {number_or_object} the slot (-1 if not found)
      */
-    LGraphNode.prototype.findInputSlot = function(name) {
+    LGraphNode.prototype.findInputSlot = function(name,  returnObj) {
         if (!this.inputs) {
             return -1;
         }
         for (var i = 0, l = this.inputs.length; i < l; ++i) {
             if (name == this.inputs[i].name) {
-                return i;
+                return !returnObj ? i : this.inputs[i];
             }
         }
         return -1;
@@ -3787,20 +4029,259 @@
      * returns the output slot with a given name (used for dynamic slots), -1 if not found
      * @method findOutputSlot
      * @param {string} name the name of the slot
-     * @return {number} the slot (-1 if not found)
+     * @param {boolean} returnObj if the obj itself wanted
+     * @return {number_or_object} the slot (-1 if not found)
      */
-    LGraphNode.prototype.findOutputSlot = function(name) {
+    LGraphNode.prototype.findOutputSlot = function(name, returnObj) {
+        returnObj = returnObj || false;
         if (!this.outputs) {
             return -1;
         }
         for (var i = 0, l = this.outputs.length; i < l; ++i) {
             if (name == this.outputs[i].name) {
-                return i;
+                return !returnObj ? i : this.outputs[i];
+            }
+        }
+        return -1;
+    };
+    
+    // TODO refactor: USE SINGLE findInput/findOutput functions! :: merge options
+    
+    /**
+     * returns the first free input slot
+     * @method findInputSlotFree
+     * @param {object} options
+     * @return {number_or_object} the slot (-1 if not found)
+     */
+    LGraphNode.prototype.findInputSlotFree = function(optsIn) {
+        var optsIn = optsIn || {};
+        var optsDef = {returnObj: false
+                        ,typesNotAccepted: []
+                      };
+        var opts = Object.assign(optsDef,optsIn);
+        if (!this.inputs) {
+            return -1;
+        }
+        for (var i = 0, l = this.inputs.length; i < l; ++i) {
+            if (this.inputs[i].link && this.inputs[i].link != null) {
+                continue;
+            }
+            if (opts.typesNotAccepted && opts.typesNotAccepted.includes && opts.typesNotAccepted.includes(this.inputs[i].type)){
+                continue;
+            }
+            return !opts.returnObj ? i : this.inputs[i];
+        }
+        return -1;
+    };
+
+    /**
+     * returns the first output slot free
+     * @method findOutputSlotFree
+     * @param {object} options
+     * @return {number_or_object} the slot (-1 if not found)
+     */
+    LGraphNode.prototype.findOutputSlotFree = function(optsIn) {
+        var optsIn = optsIn || {};
+        var optsDef = { returnObj: false
+                        ,typesNotAccepted: []
+                      };
+        var opts = Object.assign(optsDef,optsIn);
+        if (!this.outputs) {
+            return -1;
+        }
+        for (var i = 0, l = this.outputs.length; i < l; ++i) {
+            if (this.outputs[i].links && this.outputs[i].links != null) {
+                continue;
+            }
+            if (opts.typesNotAccepted && opts.typesNotAccepted.includes && opts.typesNotAccepted.includes(this.outputs[i].type)){
+                continue;
+            }
+            return !opts.returnObj ? i : this.outputs[i];
+        }
+        return -1;
+    };
+    
+    /**
+     * findSlotByType for INPUTS
+     */
+    LGraphNode.prototype.findInputSlotByType = function(type, returnObj, preferFreeSlot, doNotUseOccupied) {
+        return this.findSlotByType(true, type, returnObj, preferFreeSlot, doNotUseOccupied);
+    };
+
+    /**
+     * findSlotByType for OUTPUTS
+     */
+    LGraphNode.prototype.findOutputSlotByType = function(type, returnObj, preferFreeSlot, doNotUseOccupied) {
+        return this.findSlotByType(false, type, returnObj, preferFreeSlot, doNotUseOccupied);
+    };
+    
+    /**
+     * returns the output (or input) slot with a given type, -1 if not found
+     * @method findSlotByType
+     * @param {boolean} input uise inputs instead of outputs
+     * @param {string} type the type of the slot
+     * @param {boolean} returnObj if the obj itself wanted
+     * @param {boolean} preferFreeSlot if we want a free slot (if not found, will return the first of the type anyway)
+     * @return {number_or_object} the slot (-1 if not found)
+     */
+    LGraphNode.prototype.findSlotByType = function(input, type, returnObj, preferFreeSlot, doNotUseOccupied) {
+        input = input || false;
+        returnObj = returnObj || false;
+        preferFreeSlot = preferFreeSlot || false;
+        doNotUseOccupied = doNotUseOccupied || false;
+        var aSlots = input ? this.inputs : this.outputs;
+        if (!aSlots) {
+            return -1;
+        }
+		// !! empty string type is considered 0, * !!
+		if (type == "" || type == "*") type = 0; 
+        for (var i = 0, l = aSlots.length; i < l; ++i) {
+            var tFound = false;
+            var aSource = (type+"").toLowerCase().split(",");
+            var aDest = aSlots[i].type=="0"||aSlots[i].type=="*"?"0":aSlots[i].type;
+			aDest = (aDest+"").toLowerCase().split(",");
+            for(sI=0;sI<aSource.length;sI++){
+                for(dI=0;dI<aDest.length;dI++){
+					if (aSource[sI]=="_event_") aSource[sI] = LiteGraph.EVENT;
+					if (aDest[sI]=="_event_") aDest[sI] = LiteGraph.EVENT;
+					if (aSource[sI]=="*") aSource[sI] = 0;
+					if (aDest[sI]=="*") aDest[sI] = 0;
+					if (aSource[sI] == aDest[dI]) {
+                        if (preferFreeSlot && aSlots[i].links && aSlots[i].links !== null) continue;
+                        return !returnObj ? i : aSlots[i];
+                    }
+                }
+            }
+        }
+        // if didnt find some, stop checking for free slots
+        if (preferFreeSlot && !doNotUseOccupied){
+            for (var i = 0, l = aSlots.length; i < l; ++i) {
+                var tFound = false;
+                var aSource = (type+"").toLowerCase().split(",");
+                var aDest = aSlots[i].type=="0"||aSlots[i].type=="*"?"0":aSlots[i].type;
+				aDest = (aDest+"").toLowerCase().split(",");
+                for(sI=0;sI<aSource.length;sI++){
+                    for(dI=0;dI<aDest.length;dI++){
+						if (aSource[sI]=="*") aSource[sI] = 0;
+						if (aDest[sI]=="*") aDest[sI] = 0;
+                        if (aSource[sI] == aDest[dI]) {
+                            return !returnObj ? i : aSlots[i];
+                        }
+                    }
+                }
             }
         }
         return -1;
     };
 
+    /**
+     * connect this node output to the input of another node BY TYPE
+     * @method connectByType
+     * @param {number_or_string} slot (could be the number of the slot or the string with the name of the slot)
+     * @param {LGraphNode} node the target node
+     * @param {string} target_type the input slot type of the target node
+     * @return {Object} the link_info is created, otherwise null
+     */
+    LGraphNode.prototype.connectByType = function(slot, target_node, target_slotType, optsIn) {
+        var optsIn = optsIn || {};
+        var optsDef = { createEventInCase: true
+					   	,firstFreeIfOutputGeneralInCase: true
+                        ,generalTypeInCase: true
+                      };
+        var opts = Object.assign(optsDef,optsIn);
+        if (target_node && target_node.constructor === Number) {
+            target_node = this.graph.getNodeById(target_node);
+        }
+        target_slot = target_node.findInputSlotByType(target_slotType, false, true);
+        if (target_slot >= 0 && target_slot !== null){
+            //console.debug("CONNbyTYPE type "+target_slotType+" for "+target_slot)
+            return this.connect(slot, target_node, target_slot);
+        }else{
+            //console.log("type "+target_slotType+" not found or not free?")
+            if (opts.createEventInCase && target_slotType == LiteGraph.EVENT){
+                // WILL CREATE THE onTrigger IN SLOT
+				//console.debug("connect WILL CREATE THE onTrigger "+target_slotType+" to "+target_node);
+                return this.connect(slot, target_node, -1);
+            }
+			// connect to the first general output slot if not found a specific type and 
+            if (opts.generalTypeInCase){
+                var target_slot = target_node.findInputSlotByType(0, false, true, true);
+				//console.debug("connect TO a general type (*, 0), if not found the specific type ",target_slotType," to ",target_node,"RES_SLOT:",target_slot);
+                if (target_slot >= 0){
+                    return this.connect(slot, target_node, target_slot);
+                }
+            }
+            // connect to the first free input slot if not found a specific type and this output is general
+            if (opts.firstFreeIfOutputGeneralInCase && (target_slotType == 0 || target_slotType == "*" || target_slotType == "")){
+                var target_slot = target_node.findInputSlotFree({typesNotAccepted: [LiteGraph.EVENT] });
+				//console.debug("connect TO TheFirstFREE ",target_slotType," to ",target_node,"RES_SLOT:",target_slot);
+                if (target_slot >= 0){
+					return this.connect(slot, target_node, target_slot);
+                }
+            }
+			
+			console.debug("no way to connect type: ",target_slotType," to targetNODE ",target_node);
+			//TODO filter
+			
+            return null;
+        }
+    }
+    
+    /**
+     * connect this node input to the output of another node BY TYPE
+     * @method connectByType
+     * @param {number_or_string} slot (could be the number of the slot or the string with the name of the slot)
+     * @param {LGraphNode} node the target node
+     * @param {string} target_type the output slot type of the target node
+     * @return {Object} the link_info is created, otherwise null
+     */
+    LGraphNode.prototype.connectByTypeOutput = function(slot, source_node, source_slotType, optsIn) {
+        var optsIn = optsIn || {};
+        var optsDef = { createEventInCase: true
+                        ,firstFreeIfInputGeneralInCase: true
+                        ,generalTypeInCase: true
+                      };
+        var opts = Object.assign(optsDef,optsIn);
+        if (source_node && source_node.constructor === Number) {
+            source_node = this.graph.getNodeById(source_node);
+        }
+        source_slot = source_node.findOutputSlotByType(source_slotType, false, true);
+        if (source_slot >= 0 && source_slot !== null){
+            //console.debug("CONNbyTYPE OUT! type "+source_slotType+" for "+source_slot)
+            return source_node.connect(source_slot, this, slot);
+        }else{
+            
+            // connect to the first general output slot if not found a specific type and 
+            if (opts.generalTypeInCase){
+                var source_slot = source_node.findOutputSlotByType(0, false, true, true);
+                if (source_slot >= 0){
+                    return source_node.connect(source_slot, this, slot);
+                }
+            }
+            
+            if (opts.createEventInCase && source_slotType == LiteGraph.EVENT){
+                // WILL CREATE THE onExecuted OUT SLOT
+				if (LiteGraph.do_add_triggers_slots){
+					var source_slot = source_node.addOnExecutedOutput();
+					return source_node.connect(source_slot, this, slot);
+				}
+            }
+            // connect to the first free output slot if not found a specific type and this input is general
+            if (opts.firstFreeIfInputGeneralInCase && (source_slotType == 0 || source_slotType == "*" || source_slotType == "")){
+                var source_slot = source_node.findOutputSlotFree({typesNotAccepted: [LiteGraph.EVENT] });
+                if (source_slot >= 0){
+                    return source_node.connect(source_slot, this, slot);
+                }
+            }
+            
+			console.debug("no way to connect byOUT type: ",source_slotType," to sourceNODE ",source_node);
+			//TODO filter
+			
+            //console.log("type OUT! "+source_slotType+" not found or not free?")
+            return null;
+        }
+    }
+    
     /**
      * connect this node output to the input of another node
      * @method connect
@@ -3860,14 +4341,16 @@
                 return null;
             }
         } else if (target_slot === LiteGraph.EVENT) {
-            //search for first slot with event?
-            /*
-		//create input for trigger
-		var input = target_node.addInput("onTrigger", LiteGraph.EVENT );
-		target_slot = target_node.inputs.length - 1; //last one is the one created
-		target_node.mode = LiteGraph.ON_TRIGGER;
-		*/
-            return null;
+            
+            if (LiteGraph.do_add_triggers_slots){
+	            //search for first slot with event? :: NO this is done outside
+				//console.log("Connect: Creating triggerEvent");
+	            // force mode
+	            target_node.changeMode(LiteGraph.ON_TRIGGER);
+	            target_slot = target_node.findInputSlot("onTrigger");
+        	}else{
+            	return null; // -- break --
+			}
         } else if (
             !target_node.inputs ||
             target_slot >= target_node.inputs.length
@@ -3880,45 +4363,69 @@
 
 		var changed = false;
 
-        //if there is something already plugged there, disconnect
-        if (target_node.inputs[target_slot].link != null) {
-			this.graph.beforeChange();
-            target_node.disconnectInput(target_slot);
-			changed = true;
-        }
-
-        //why here??
-        //this.setDirtyCanvas(false,true);
-        //this.graph.connectionChange( this );
-
-        var output = this.outputs[slot];
-
-        //allows nodes to block connection
-        if (target_node.onConnectInput) {
-            if ( target_node.onConnectInput(target_slot, output.type, output, this, slot) === false ) {
-                return null;
-            }
-        }
-
         var input = target_node.inputs[target_slot];
         var link_info = null;
+        var output = this.outputs[slot];
+        
+        if (!this.outputs[slot]){
+            /*console.debug("Invalid slot passed: "+slot);
+            console.debug(this.outputs);*/
+            return null;
+        }
 
-		//this slots cannot be connected (different types)
-        if (!LiteGraph.isValidConnection(output.type, input.type))
+        // allow target node to change slot
+        if (target_node.onBeforeConnectInput) {
+            // This way node can choose another slot (or make a new one?)
+            target_slot = target_node.onBeforeConnectInput(target_slot); //callback
+        }
+
+		//check target_slot and check connection types
+        if (target_slot===false || target_slot===null || !LiteGraph.isValidConnection(output.type, input.type))
 		{
 	        this.setDirtyCanvas(false, true);
 			if(changed)
 		        this.graph.connectionChange(this, link_info);
 			return null;
+		}else{
+			//console.debug("valid connection",output.type, input.type);
 		}
 
-		if(!changed)
-			this.graph.beforeChange();
+        //allows nodes to block connection, callback
+        if (target_node.onConnectInput) {
+            if ( target_node.onConnectInput(target_slot, output.type, output, this, slot) === false ) {
+                return null;
+            }
+        }
+        if (this.onConnectOutput) { // callback
+            if ( this.onConnectOutput(slot, input.type, input, target_node, target_slot) === false ) {
+                return null;
+            }
+        }
 
+        //if there is something already plugged there, disconnect
+        if (target_node.inputs[target_slot] && target_node.inputs[target_slot].link != null) {
+			this.graph.beforeChange();
+            target_node.disconnectInput(target_slot, {doProcessChange: false});
+			changed = true;
+        }
+        if (output.links !== null && output.links.length){
+            switch(output.type){
+                case LiteGraph.EVENT:
+                    if (!LiteGraph.allow_multi_output_for_events){
+                        this.graph.beforeChange();
+                        this.disconnectOutput(slot, false, {doProcessChange: false}); // Input(target_slot, {doProcessChange: false});
+                        changed = true;
+                    }
+                break;
+                default:
+                break;
+            }
+        }
+        
 		//create link class
 		link_info = new LLink(
 			++this.graph.last_link_id,
-			input.type,
+			input.type || output.type,
 			this.id,
 			slot,
 			target_node.id,
@@ -4603,8 +5110,9 @@ LGraphNode.prototype.executeAction = function(action)
 
         this._binded_mouse_callback = this.onMouse.bind(this);
 
-        element.addEventListener("mousedown", this._binded_mouse_callback);
-        element.addEventListener("mousemove", this._binded_mouse_callback);
+		LiteGraph.pointerListenerAdd(element,"down", this._binded_mouse_callback);
+		LiteGraph.pointerListenerAdd(element,"move", this._binded_mouse_callback);
+		LiteGraph.pointerListenerAdd(element,"up", this._binded_mouse_callback);
 
         element.addEventListener(
             "mousewheel",
@@ -4650,20 +5158,22 @@ LGraphNode.prototype.executeAction = function(action)
         e.canvasx = x;
         e.canvasy = y;
         e.dragging = this.dragging;
-
+        
 		var is_inside = !this.viewport || ( this.viewport && x >= this.viewport[0] && x < (this.viewport[0] + this.viewport[2]) && y >= this.viewport[1] && y < (this.viewport[1] + this.viewport[3]) );
 
+		//console.log("pointerevents: DragAndScale onMouse "+e.type+" "+is_inside);
+		
         var ignore = false;
         if (this.onmouse) {
             ignore = this.onmouse(e);
         }
 
-        if (e.type == "mousedown" && is_inside) {
+        if (e.type == LiteGraph.pointerevents_method+"down" && is_inside) {
             this.dragging = true;
-            canvas.removeEventListener( "mousemove", this._binded_mouse_callback );
-            document.body.addEventListener( "mousemove", this._binded_mouse_callback );
-            document.body.addEventListener( "mouseup", this._binded_mouse_callback );
-        } else if (e.type == "mousemove") {
+			LiteGraph.pointerListenerRemove(canvas,"move",this._binded_mouse_callback);
+			LiteGraph.pointerListenerAdd(document,"move",this._binded_mouse_callback);
+			LiteGraph.pointerListenerAdd(document,"up",this._binded_mouse_callback);
+        } else if (e.type == LiteGraph.pointerevents_method+"move") {
             if (!ignore) {
                 var deltax = x - this.last_mouse[0];
                 var deltay = y - this.last_mouse[1];
@@ -4671,11 +5181,11 @@ LGraphNode.prototype.executeAction = function(action)
                     this.mouseDrag(deltax, deltay);
                 }
             }
-        } else if (e.type == "mouseup") {
+        } else if (e.type == LiteGraph.pointerevents_method+"up") {
             this.dragging = false;
-            document.body.removeEventListener( "mousemove", this._binded_mouse_callback );
-            document.body.removeEventListener( "mouseup", this._binded_mouse_callback );
-            canvas.addEventListener("mousemove", this._binded_mouse_callback );
+			LiteGraph.pointerListenerRemove(document,"move",this._binded_mouse_callback);
+			LiteGraph.pointerListenerRemove(document,"up",this._binded_mouse_callback);
+			LiteGraph.pointerListenerAdd(canvas,"move",this._binded_mouse_callback);
         } else if ( is_inside &&
             (e.type == "mousewheel" ||
             e.type == "wheel" ||
@@ -4827,9 +5337,19 @@ LGraphNode.prototype.executeAction = function(action)
         this.default_link_color = LiteGraph.LINK_COLOR;
         this.default_connection_color = {
             input_off: "#778",
-            input_on: "#7F7",
+            input_on: "#7F7", //"#BBD"
             output_off: "#778",
-            output_on: "#7F7"
+            output_on: "#7F7" //"#BBD"
+		};
+        this.default_connection_color_byType = {
+            /*number: "#7F7",
+            string: "#77F",
+            boolean: "#F77",*/
+        }
+        this.default_connection_color_byTypeOff = {
+            /*number: "#474",
+            string: "#447",
+            boolean: "#744",*/
         };
 
         this.highquality_render = true;
@@ -4846,7 +5366,7 @@ LGraphNode.prototype.executeAction = function(action)
         this.allow_dragnodes = true;
         this.allow_interaction = true; //allow to control widgets, buttons, collapse, etc
         this.allow_searchbox = true;
-        this.allow_reconnect_links = false; //allows to change a connection with having to redo it again
+        this.allow_reconnect_links = true; //allows to change a connection with having to redo it again
 		this.align_to_grid = false; //snap to grid
 
         this.drag_mode = false;
@@ -4964,6 +5484,8 @@ LGraphNode.prototype.executeAction = function(action)
 
         this.last_mouse = [0, 0];
         this.last_mouseclick = 0;
+	  	this.pointer_is_down = false;
+	  	this.pointer_is_double = false;
         this.visible_area.set([0, 0, 0, 0]);
 
         if (this.onClear) {
@@ -5144,8 +5666,8 @@ LGraphNode.prototype.executeAction = function(action)
         }
 
         //input:  (move and up could be unbinded)
-        this._mousemove_callback = this.processMouseMove.bind(this);
-        this._mouseup_callback = this.processMouseUp.bind(this);
+        // why here? this._mousemove_callback = this.processMouseMove.bind(this);
+        // why here? this._mouseup_callback = this.processMouseUp.bind(this);
 
         if (!skip_events) {
             this.bindEvents();
@@ -5154,6 +5676,7 @@ LGraphNode.prototype.executeAction = function(action)
 
     //used in some events to capture them
     LGraphCanvas.prototype._doNothing = function doNothing(e) {
+    	//console.log("pointerevents: _doNothing "+e.type);
         e.preventDefault();
         return false;
     };
@@ -5172,6 +5695,8 @@ LGraphNode.prototype.executeAction = function(action)
             return;
         }
 
+        //console.log("pointerevents: bindEvents");
+        
         var canvas = this.canvas;
 
         var ref_window = this.getCanvasWindow();
@@ -5179,12 +5704,19 @@ LGraphNode.prototype.executeAction = function(action)
 
         this._mousedown_callback = this.processMouseDown.bind(this);
         this._mousewheel_callback = this.processMouseWheel.bind(this);
-        this._touch_callback = this.touchHandler.bind(this);
+        // why mousemove and mouseup were not binded here?
+        this._mousemove_callback = this.processMouseMove.bind(this);
+        this._mouseup_callback = this.processMouseUp.bind(this);
+        
+        //touch events -- TODO IMPLEMENT
+        //this._touch_callback = this.touchHandler.bind(this);
 
-        canvas.addEventListener("mousedown", this._mousedown_callback, true); //down do not need to store the binded
-        canvas.addEventListener("mousemove", this._mousemove_callback);
+		LiteGraph.pointerListenerAdd(canvas,"down", this._mousedown_callback, true); //down do not need to store the binded
         canvas.addEventListener("mousewheel", this._mousewheel_callback, false);
 
+        LiteGraph.pointerListenerAdd(canvas,"up", this._mouseup_callback, true); // CHECK: ??? binded or not
+		LiteGraph.pointerListenerAdd(canvas,"move", this._mousemove_callback);
+        
         canvas.addEventListener("contextmenu", this._doNothing);
         canvas.addEventListener(
             "DOMMouseScroll",
@@ -5192,14 +5724,14 @@ LGraphNode.prototype.executeAction = function(action)
             false
         );
 
-        //touch events
-        //if( 'touchstart' in document.documentElement )
+        //touch events -- THIS WAY DOES NOT WORK, finish implementing pointerevents, than clean the touchevents
+        /*if( 'touchstart' in document.documentElement )
         {
             canvas.addEventListener("touchstart", this._touch_callback, true);
             canvas.addEventListener("touchmove", this._touch_callback, true);
             canvas.addEventListener("touchend", this._touch_callback, true);
             canvas.addEventListener("touchcancel", this._touch_callback, true);
-        }
+        }*/
 
         //Keyboard ******************
         this._key_callback = this.processKey.bind(this);
@@ -5228,10 +5760,14 @@ LGraphNode.prototype.executeAction = function(action)
             return;
         }
 
+        //console.log("pointerevents: unbindEvents");
+        
         var ref_window = this.getCanvasWindow();
         var document = ref_window.document;
 
-        this.canvas.removeEventListener("mousedown", this._mousedown_callback);
+		LiteGraph.pointerListenerRemove(this.canvas,"move", this._mousedown_callback);
+        LiteGraph.pointerListenerRemove(this.canvas,"up", this._mousedown_callback);
+        LiteGraph.pointerListenerRemove(this.canvas,"down", this._mousedown_callback);
         this.canvas.removeEventListener(
             "mousewheel",
             this._mousewheel_callback
@@ -5246,10 +5782,11 @@ LGraphNode.prototype.executeAction = function(action)
         this.canvas.removeEventListener("drop", this._ondrop_callback);
         this.canvas.removeEventListener("dragenter", this._doReturnTrue);
 
-        this.canvas.removeEventListener("touchstart", this._touch_callback );
+        //touch events -- THIS WAY DOES NOT WORK, finish implementing pointerevents, than clean the touchevents
+        /*this.canvas.removeEventListener("touchstart", this._touch_callback );
         this.canvas.removeEventListener("touchmove", this._touch_callback );
         this.canvas.removeEventListener("touchend", this._touch_callback );
-        this.canvas.removeEventListener("touchcancel", this._touch_callback );
+        this.canvas.removeEventListener("touchcancel", this._touch_callback );*/
 
         this._mousedown_callback = null;
         this._mousewheel_callback = null;
@@ -5377,9 +5914,9 @@ LGraphNode.prototype.executeAction = function(action)
 		this.block_click = true;
 		this.last_mouseclick = 0;
 	}
-
+	
     LGraphCanvas.prototype.processMouseDown = function(e) {
-
+    	
 		if( this.set_canvas_dirty_on_mouse_event )
 			this.dirty_canvas = true;
 		
@@ -5394,9 +5931,10 @@ LGraphNode.prototype.executeAction = function(action)
         LGraphCanvas.active_canvas = this;
         var that = this;
 
-		var x = e.localX;
-		var y = e.localY;
+		var x = e.clientX;
+		var y = e.clientY;
 		//console.log(y,this.viewport);
+		//console.log("pointerevents: processMouseDown pointerId:"+e.pointerId+" which:"+e.which+" isPrimary:"+e.isPrimary+" :: x y "+x+" "+y);
 
 		this.ds.viewport = this.viewport;
 		var is_inside = !this.viewport || ( this.viewport && x >= this.viewport[0] && x < (this.viewport[0] + this.viewport[2]) && y >= this.viewport[1] && y < (this.viewport[1] + this.viewport[3]) );
@@ -5404,25 +5942,36 @@ LGraphNode.prototype.executeAction = function(action)
         //move mouse move event to the window in case it drags outside of the canvas
 		if(!this.options.skip_events)
 		{
-			this.canvas.removeEventListener("mousemove", this._mousemove_callback);
-			ref_window.document.addEventListener( "mousemove", this._mousemove_callback, true ); //catch for the entire window
-			ref_window.document.addEventListener( "mouseup", this._mouseup_callback, true );
+			LiteGraph.pointerListenerRemove(this.canvas,"move", this._mousemove_callback);
+			LiteGraph.pointerListenerAdd(ref_window.document,"move", this._mousemove_callback,true); //catch for the entire window
+			LiteGraph.pointerListenerAdd(ref_window.document,"up", this._mouseup_callback,true);
 		}
 
-		if(!is_inside)
+		if(!is_inside){
 			return;
+		}
 
         var node = this.graph.getNodeOnPos( e.canvasX, e.canvasY, this.visible_nodes, 5 );
         var skip_dragging = false;
         var skip_action = false;
         var now = LiteGraph.getTime();
-        var is_double_click = now - this.last_mouseclick < 300;
-		this.mouse[0] = e.localX;
-		this.mouse[1] = e.localY;
+		var is_primary = (e.isPrimary === undefined || !e.isPrimary);
+        var is_double_click = (now - this.last_mouseclick < 300) && is_primary;
+		this.mouse[0] = e.clientX;
+		this.mouse[1] = e.clientY;
         this.graph_mouse[0] = e.canvasX;
         this.graph_mouse[1] = e.canvasY;
 		this.last_click_position = [this.mouse[0],this.mouse[1]];
-
+	  	
+	  	if (this.pointer_is_down && is_primary ){
+		  this.pointer_is_double = true;
+		  //console.log("pointerevents: pointer_is_double start");
+		}else{
+		  this.pointer_is_double = false;
+		}
+	  	this.pointer_is_down = true;
+	  
+	  	
         this.canvas.focus();
 
         LiteGraph.closeAllContextMenus(ref_window);
@@ -5433,8 +5982,8 @@ LGraphNode.prototype.executeAction = function(action)
                 return;
         }
 
-		//left button mouse
-        if (e.which == 1)
+		//left button mouse / single finger
+        if (e.which == 1 && !this.pointer_is_double)
 		{
             if (e.ctrlKey)
 			{
@@ -5446,6 +5995,27 @@ LGraphNode.prototype.executeAction = function(action)
                 skip_action = true;
             }
 
+            // clone node ALT dragging
+            if (LiteGraph.alt_drag_do_clone_nodes && e.altKey && node && this.allow_interaction && !skip_action && !this.read_only)
+            {
+                if (cloned = node.clone()){
+                    cloned.pos[0] += 5;
+                    cloned.pos[1] += 5;
+                    this.graph.add(cloned,false,{doCalcSize: false});
+                    node = cloned;
+                    skip_action = true;
+                    if (!block_drag_node) {
+                        if (this.allow_dragnodes) {
+							this.graph.beforeChange();
+                            this.node_dragged = node;
+                        }
+                        if (!this.selected_nodes[node.id]) {
+                            this.processNodeSelected(node, e);
+                        }
+                    }
+                }
+            }
+            
             var clicking_canvas_bg = false;
 
             //when clicked on top of a node
@@ -5458,11 +6028,9 @@ LGraphNode.prototype.executeAction = function(action)
                 //not dragging mouse to connect two slots
                 if ( !this.connecting_node && !node.flags.collapsed && !this.live_mode ) {
                     //Search for corner for resize
-                    if (
-                        !skip_action &&
+                    if ( !skip_action &&
                         node.resizable !== false &&
-                        isInsideRectangle(
-                            e.canvasX,
+                        isInsideRectangle( e.canvasX,
                             e.canvasY,
                             node.pos[0] + node.size[0] - 5,
                             node.pos[1] + node.size[1] - 5,
@@ -5470,7 +6038,7 @@ LGraphNode.prototype.executeAction = function(action)
                             10
                         )
                     ) {
-						this.graph.beforeChange();						
+						this.graph.beforeChange();
                         this.resizing_node = node;
                         this.canvas.style.cursor = "se-resize";
                         skip_action = true;
@@ -5492,11 +6060,14 @@ LGraphNode.prototype.executeAction = function(action)
                                 ) {
                                     this.connecting_node = node;
                                     this.connecting_output = output;
+                                    this.connecting_output.slot_index = i;
                                     this.connecting_pos = node.getConnectionPos( false, i );
                                     this.connecting_slot = i;
 
-                                    if (e.shiftKey) {
-                                        node.disconnectOutput(i);
+                                    if (LiteGraph.shift_click_do_break_link_from){
+                                        if (e.shiftKey) {
+                                            node.disconnectOutput(i);
+                                        }
                                     }
 
                                     if (is_double_click) {
@@ -5544,12 +6115,22 @@ LGraphNode.prototype.executeAction = function(action)
                                         var link_info = this.graph.links[
                                             input.link
                                         ]; //before disconnecting
-                                        node.disconnectInput(i);
+                                        if (LiteGraph.click_do_break_link_to){
+                                            node.disconnectInput(i);
+                                            this.dirty_bgcanvas = true;
+                                            skip_action = true;
+                                        }else{
+                                            // do same action as has not node ?
+                                        }
 
                                         if (
                                             this.allow_reconnect_links ||
+											//this.move_destination_link_without_shift ||
                                             e.shiftKey
                                         ) {
+                                            if (!LiteGraph.click_do_break_link_to){
+                                                node.disconnectInput(i);
+                                            }
                                             this.connecting_node = this.graph._nodes_by_id[
                                                 link_info.origin_id
                                             ];
@@ -5559,8 +6140,24 @@ LGraphNode.prototype.executeAction = function(action)
                                                 this.connecting_slot
                                             ];
                                             this.connecting_pos = this.connecting_node.getConnectionPos( false, this.connecting_slot );
+                                            
+                                            this.dirty_bgcanvas = true;
+                                            skip_action = true;
                                         }
 
+                                        
+                                    }else{
+                                        // has not node
+                                    }
+                                    
+                                    if (!skip_action){
+                                        // connect from in to out, from to to from
+                                        this.connecting_node = node;
+                                        this.connecting_input = input;
+                                        this.connecting_input.slot_index = i;
+                                        this.connecting_pos = node.getConnectionPos( true, i );
+                                        this.connecting_slot = i;
+                                        
                                         this.dirty_bgcanvas = true;
                                         skip_action = true;
                                     }
@@ -5627,65 +6224,153 @@ LGraphNode.prototype.executeAction = function(action)
                 }
             } //clicked outside of nodes
             else {
-                //search for link connector
-				if(!this.read_only) 
-					for (var i = 0; i < this.visible_links.length; ++i) {
-						var link = this.visible_links[i];
-						var center = link._pos;
-						if (
-							!center ||
-							e.canvasX < center[0] - 4 ||
-							e.canvasX > center[0] + 4 ||
-							e.canvasY < center[1] - 4 ||
-							e.canvasY > center[1] + 4
-						) {
-							continue;
+				if (!skip_action){
+					//search for link connector
+					if(!this.read_only) {
+						for (var i = 0; i < this.visible_links.length; ++i) {
+							var link = this.visible_links[i];
+							var center = link._pos;
+							if (
+								!center ||
+								e.canvasX < center[0] - 4 ||
+								e.canvasX > center[0] + 4 ||
+								e.canvasY < center[1] - 4 ||
+								e.canvasY > center[1] + 4
+							) {
+								continue;
+							}
+							//link clicked
+							this.showLinkMenu(link, e);
+							this.over_link_center = null; //clear tooltip
+							break;
 						}
-						//link clicked
-						this.showLinkMenu(link, e);
-						this.over_link_center = null; //clear tooltip
-						break;
 					}
 
-                this.selected_group = this.graph.getGroupOnPos( e.canvasX, e.canvasY );
-                this.selected_group_resizing = false;
-                if (this.selected_group && !this.read_only ) {
-                    if (e.ctrlKey) {
-                        this.dragging_rectangle = null;
-                    }
+					this.selected_group = this.graph.getGroupOnPos( e.canvasX, e.canvasY );
+					this.selected_group_resizing = false;
+					if (this.selected_group && !this.read_only ) {
+						if (e.ctrlKey) {
+							this.dragging_rectangle = null;
+						}
 
-                    var dist = distance( [e.canvasX, e.canvasY], [ this.selected_group.pos[0] + this.selected_group.size[0], this.selected_group.pos[1] + this.selected_group.size[1] ] );
-                    if (dist * this.ds.scale < 10) {
-                        this.selected_group_resizing = true;
-                    } else {
-                        this.selected_group.recomputeInsideNodes();
-                    }
-                }
+						var dist = distance( [e.canvasX, e.canvasY], [ this.selected_group.pos[0] + this.selected_group.size[0], this.selected_group.pos[1] + this.selected_group.size[1] ] );
+						if (dist * this.ds.scale < 10) {
+							this.selected_group_resizing = true;
+						} else {
+							this.selected_group.recomputeInsideNodes();
+						}
+					}
 
-                if (is_double_click && !this.read_only && this.allow_searchbox) {
-                    this.showSearchBox(e);
-                }
+					if (is_double_click && !this.read_only && this.allow_searchbox) {
+						this.showSearchBox(e);
+						e.preventDefault();
+						e.stopPropagation();
+					}
 
-                clicking_canvas_bg = true;
+					clicking_canvas_bg = true;
+				}
             }
 
             if (!skip_action && clicking_canvas_bg && this.allow_dragcanvas) {
-                this.dragging_canvas = true;
+            	//console.log("pointerevents: dragging_canvas start");
+            	this.dragging_canvas = true;
             }
+            
         } else if (e.which == 2) {
             //middle button
-        } else if (e.which == 3) {
+        	
+			if (LiteGraph.middle_click_slot_add_default_node){
+				if (node && this.allow_interaction && !skip_action && !this.read_only){
+					//not dragging mouse to connect two slots
+					if (
+						!this.connecting_node &&
+						!node.flags.collapsed &&
+						!this.live_mode
+					) {
+						var mClikSlot = false;
+						var mClikSlot_index = false;
+						var mClikSlot_isOut = false;
+						//search for outputs
+						if (node.outputs) {
+							for ( var i = 0, l = node.outputs.length; i < l; ++i ) {
+								var output = node.outputs[i];
+								var link_pos = node.getConnectionPos(false, i);
+								if (isInsideRectangle(e.canvasX,e.canvasY,link_pos[0] - 15,link_pos[1] - 10,30,20)) {
+									mClikSlot = output;
+									mClikSlot_index = i;
+									mClikSlot_isOut = true;
+									break;
+								}
+							}
+						}
+
+						//search for inputs
+						if (node.inputs) {
+							for ( var i = 0, l = node.inputs.length; i < l; ++i ) {
+								var input = node.inputs[i];
+								var link_pos = node.getConnectionPos(true, i);
+								if (isInsideRectangle(e.canvasX,e.canvasY,link_pos[0] - 15,link_pos[1] - 10,30,20)) {
+									mClikSlot = input;
+									mClikSlot_index = i;
+									mClikSlot_isOut = false;
+									break;
+								}
+							}
+						}
+						//console.log("middleClickSlots? "+mClikSlot+" & "+(mClikSlot_index!==false));
+						if (mClikSlot && mClikSlot_index!==false){
+							
+							var alphaPosY = 0.5-((mClikSlot_index+1)/((mClikSlot_isOut?node.outputs.length:node.inputs.length)));
+							var node_bounding = node.getBounding();
+							// estimate a position: this is a bad semi-bad-working mess .. REFACTOR with a correct autoplacement that knows about the others slots and nodes
+							var posRef = [	(!mClikSlot_isOut?node_bounding[0]:node_bounding[0]+node_bounding[2])// + node_bounding[0]/this.canvas.width*150
+											,e.canvasY-80// + node_bounding[0]/this.canvas.width*66 // vertical "derive"
+										  ];
+							var nodeCreated = this.createDefaultNodeForSlot({   	nodeFrom: !mClikSlot_isOut?null:node
+																					,slotFrom: !mClikSlot_isOut?null:mClikSlot_index
+																					,nodeTo: !mClikSlot_isOut?node:null
+																					,slotTo: !mClikSlot_isOut?mClikSlot_index:null
+																					,position: posRef //,e: e
+																					,nodeType: "AUTO" //nodeNewType
+																					,posAdd:[!mClikSlot_isOut?-30:30, -alphaPosY*130] //-alphaPosY*30]
+																					,posSizeFix:[!mClikSlot_isOut?-1:0, 0] //-alphaPosY*2*/
+																				});
+								
+						}
+					}
+				}
+			}
+        	
+        } else if (e.which == 3 || this.pointer_is_double) {
+			
             //right button
-			if(!this.read_only)
-	            this.processContextMenu(node, e);
+			if (this.allow_interaction && !skip_action && !this.read_only){
+				
+				// is it hover a node ?
+				if (node){
+					if(Object.keys(this.selected_nodes).length
+					   && (this.selected_nodes[node.id] || e.shiftKey || e.ctrlKey || e.metaKey)
+					){
+						// is multiselected or using shift to include the now node
+						if (!this.selected_nodes[node.id]) this.selectNodes([node],true); // add this if not present
+					}else{
+						// update selection
+						this.selectNodes([node]);
+					}
+				}
+				
+				// show menu on this node
+				this.processContextMenu(node, e);
+			}
+			
         }
 
         //TODO
         //if(this.node_selected != prev_selected)
         //	this.onNodeSelectionChange(this.node_selected);
 
-        this.last_mouse[0] = e.localX;
-        this.last_mouse[1] = e.localY;
+        this.last_mouse[0] = e.clientX;
+        this.last_mouse[1] = e.clientY;
         this.last_mouseclick = LiteGraph.getTime();
         this.last_mouse_dragging = true;
 
@@ -5733,7 +6418,7 @@ LGraphNode.prototype.executeAction = function(action)
 
         LGraphCanvas.active_canvas = this;
         this.adjustMouseEvent(e);
-        var mouse = [e.localX, e.localY];
+        var mouse = [e.clientX, e.clientY];
 		this.mouse[0] = mouse[0];
 		this.mouse[1] = mouse[1];
         var delta = [
@@ -5744,8 +6429,11 @@ LGraphNode.prototype.executeAction = function(action)
         this.graph_mouse[0] = e.canvasX;
         this.graph_mouse[1] = e.canvasY;
 
+        //console.log("pointerevents: processMouseMove "+e.pointerId+" "+e.isPrimary);
+        
 		if(this.block_click)
 		{
+			//console.log("pointerevents: processMouseMove block_click");
 			e.preventDefault();
 			return false;
 		}
@@ -5786,6 +6474,7 @@ LGraphNode.prototype.executeAction = function(action)
             }
             this.dirty_bgcanvas = true;
         } else if (this.dragging_canvas) {
+        	////console.log("pointerevents: processMouseMove is dragging_canvas");
             this.ds.offset[0] += delta[0] / this.ds.scale;
             this.ds.offset[1] += delta[1] / this.ds.scale;
             this.dirty_canvas = true;
@@ -5836,23 +6525,47 @@ LGraphNode.prototype.executeAction = function(action)
 
                 //if dragging a link
                 if (this.connecting_node) {
-                    var pos = this._highlight_input || [0, 0]; //to store the output of isOverNodeInput
+                    
+                    if (this.connecting_output){
+                        
+                        var pos = this._highlight_input || [0, 0]; //to store the output of isOverNodeInput
 
-                    //on top of input
-                    if (this.isOverNodeBox(node, e.canvasX, e.canvasY)) {
-                        //mouse on top of the corner box, don't know what to do
-                    } else {
-                        //check if I have a slot below de mouse
-                        var slot = this.isOverNodeInput( node, e.canvasX, e.canvasY, pos );
-                        if (slot != -1 && node.inputs[slot]) {
-                            var slot_type = node.inputs[slot].type;
-                            if ( LiteGraph.isValidConnection( this.connecting_output.type, slot_type ) ) {
-                                this._highlight_input = pos;
-                                this._highlight_input_slot = node.inputs[slot];
-                            }
+                        //on top of input
+                        if (this.isOverNodeBox(node, e.canvasX, e.canvasY)) {
+                            //mouse on top of the corner box, don't know what to do
                         } else {
-                            this._highlight_input = null;
-                            this._highlight_input_slot = null;
+                            //check if I have a slot below de mouse
+                            var slot = this.isOverNodeInput( node, e.canvasX, e.canvasY, pos );
+                            if (slot != -1 && node.inputs[slot]) {
+                                var slot_type = node.inputs[slot].type;
+                                if ( LiteGraph.isValidConnection( this.connecting_output.type, slot_type ) ) {
+                                    this._highlight_input = pos;
+									this._highlight_input_slot = node.inputs[slot]; // XXX CHECK THIS
+                                }
+                            } else {
+                                this._highlight_input = null;
+								this._highlight_input_slot = null;  // XXX CHECK THIS
+                            }
+                        }
+                        
+                    }else if(this.connecting_input){
+                        
+                        var pos = this._highlight_output || [0, 0]; //to store the output of isOverNodeOutput
+
+                        //on top of output
+                        if (this.isOverNodeBox(node, e.canvasX, e.canvasY)) {
+                            //mouse on top of the corner box, don't know what to do
+                        } else {
+                            //check if I have a slot below de mouse
+                            var slot = this.isOverNodeOutput( node, e.canvasX, e.canvasY, pos );
+                            if (slot != -1 && node.outputs[slot]) {
+                                var slot_type = node.outputs[slot].type;
+                                if ( LiteGraph.isValidConnection( this.connecting_input.type, slot_type ) ) {
+                                    this._highlight_output = pos;
+                                }
+                            } else {
+                                this._highlight_output = null;
+                            }
                         }
                     }
                 }
@@ -5946,6 +6659,18 @@ LGraphNode.prototype.executeAction = function(action)
      **/
     LGraphCanvas.prototype.processMouseUp = function(e) {
 
+		var is_primary = ( e.isPrimary === undefined || e.isPrimary );
+
+    	//early exit for extra pointer
+    	if(!is_primary){
+    		/*e.stopPropagation();
+        	e.preventDefault();*/
+    		//console.log("pointerevents: processMouseUp pointerN_stop "+e.pointerId+" "+e.isPrimary);
+    		return false;
+    	}
+    	
+    	//console.log("pointerevents: processMouseUp "+e.pointerId+" "+e.isPrimary+" :: "+e.clientX+" "+e.clientY);
+    	
 		if( this.set_canvas_dirty_on_mouse_event )
 			this.dirty_canvas = true;
 
@@ -5959,9 +6684,10 @@ LGraphNode.prototype.executeAction = function(action)
         //restore the mousemove event back to the canvas
 		if(!this.options.skip_events)
 		{
-			document.removeEventListener("mousemove",this._mousemove_callback,true);
-			this.canvas.addEventListener("mousemove",this._mousemove_callback,true);
-			document.removeEventListener("mouseup", this._mouseup_callback, true);
+			//console.log("pointerevents: processMouseUp adjustEventListener");
+			LiteGraph.pointerListenerRemove(document,"move", this._mousemove_callback,true);
+			LiteGraph.pointerListenerAdd(this.canvas,"move", this._mousemove_callback,true);
+			LiteGraph.pointerListenerRemove(document,"up", this._mouseup_callback,true);
 		}
 
         this.adjustMouseEvent(e);
@@ -5972,10 +6698,12 @@ LGraphNode.prototype.executeAction = function(action)
 
 		if(this.block_click)
 		{
-			console.log("foo");
+			//console.log("pointerevents: processMouseUp block_clicks");
 			this.block_click = false; //used to avoid sending twice a click in a immediate button
 		}
 
+		//console.log("pointerevents: processMouseUp which: "+e.which);
+		
         if (e.which == 1) {
 
 			if( this.node_widget )
@@ -6007,11 +6735,17 @@ LGraphNode.prototype.executeAction = function(action)
             }
             this.selected_group_resizing = false;
 
+			var node = this.graph.getNodeOnPos(
+							e.canvasX,
+							e.canvasY,
+							this.visible_nodes
+						);
+			
             if (this.dragging_rectangle) {
                 if (this.graph) {
                     var nodes = this.graph._nodes;
                     var node_bounding = new Float32Array(4);
-                    this.deselectAllNodes();
+                    
                     //compute bounding and flip if left to right
                     var w = Math.abs(this.dragging_rectangle[2]);
                     var h = Math.abs(this.dragging_rectangle[3]);
@@ -6028,24 +6762,31 @@ LGraphNode.prototype.executeAction = function(action)
                     this.dragging_rectangle[2] = w;
                     this.dragging_rectangle[3] = h;
 
-                    //test against all nodes (not visible because the rectangle maybe start outside
-                    var to_select = [];
-                    for (var i = 0; i < nodes.length; ++i) {
-                        var node = nodes[i];
-                        node.getBounding(node_bounding);
-                        if (
-                            !overlapBounding(
-                                this.dragging_rectangle,
-                                node_bounding
-                            )
-                        ) {
-                            continue;
-                        } //out of the visible area
-                        to_select.push(node);
-                    }
-                    if (to_select.length) {
-                        this.selectNodes(to_select);
-                    }
+					// test dragging rect size, if minimun simulate a click
+					if (!node || (w > 10 && h > 10 )){
+						//test against all nodes (not visible because the rectangle maybe start outside
+						var to_select = [];
+						for (var i = 0; i < nodes.length; ++i) {
+							var nodeX = nodes[i];
+							nodeX.getBounding(node_bounding);
+							if (
+								!overlapBounding(
+									this.dragging_rectangle,
+									node_bounding
+								)
+							) {
+								continue;
+							} //out of the visible area
+							to_select.push(nodeX);
+						}
+						if (to_select.length) {
+							this.selectNodes(to_select,e.shiftKey); // add to selection with shift
+						}
+					}else{
+						// will select of update selection
+						this.selectNodes([node],e.shiftKey||e.ctrlKey); // add to selection add to selection with ctrlKey or shiftKey
+					}
+					
                 }
                 this.dragging_rectangle = null;
             } else if (this.connecting_node) {
@@ -6053,66 +6794,86 @@ LGraphNode.prototype.executeAction = function(action)
                 this.dirty_canvas = true;
                 this.dirty_bgcanvas = true;
 
-                var node = this.graph.getNodeOnPos(
-                    e.canvasX,
-                    e.canvasY,
-                    this.visible_nodes
-                );
-
+                var connInOrOut = this.connecting_output || this.connecting_input;
+                var connType = connInOrOut.type;
+                
                 //node below mouse
                 if (node) {
+                    
+                    /* no need to condition on event type.. just another type
                     if (
-                        this.connecting_output.type == LiteGraph.EVENT &&
+                        connType == LiteGraph.EVENT &&
                         this.isOverNodeBox(node, e.canvasX, e.canvasY)
                     ) {
+                        
                         this.connecting_node.connect(
                             this.connecting_slot,
                             node,
                             LiteGraph.EVENT
                         );
-                    } else {
+                        
+                    } else {*/
+                        
                         //slot below mouse? connect
-                        var slot = this.isOverNodeInput(
-                            node,
-                            e.canvasX,
-                            e.canvasY
-                        );
-                        if (slot != -1) {
-                            this.connecting_node.connect(
-                                this.connecting_slot,
+                        
+                        if (this.connecting_output){
+                            
+                            var slot = this.isOverNodeInput(
                                 node,
-                                slot
+                                e.canvasX,
+                                e.canvasY
                             );
-                        } else {
-                            //not on top of an input
-                            var input = node.getInputInfo(0);
-                            //auto connect
-                            if (
-                                this.connecting_output.type == LiteGraph.EVENT
-                            ) {
-                                this.connecting_node.connect(
-                                    this.connecting_slot,
-                                    node,
-                                    LiteGraph.EVENT
-                                );
-                            } else if (
-                                input &&
-                                !input.link &&
-                                LiteGraph.isValidConnection(
-                                    input.type && this.connecting_output.type
-                                )
-                            ) {
-                                this.connecting_node.connect(
-                                    this.connecting_slot,
-                                    node,
-                                    0
-                                );
+                            if (slot != -1) {
+                                this.connecting_node.connect(this.connecting_slot, node, slot);
+                            } else {
+                                //not on top of an input
+                                // look for a good slot
+                                this.connecting_node.connectByType(this.connecting_slot,node,connType);
                             }
+                            
+                        }else if (this.connecting_input){
+                            
+                            var slot = this.isOverNodeOutput(
+                                node,
+                                e.canvasX,
+                                e.canvasY
+                            );
+
+                            if (slot != -1) {
+                                node.connect(slot, this.connecting_node, this.connecting_slot); // this is inverted has output-input nature like
+                            } else {
+                                //not on top of an input
+                                // look for a good slot
+                                this.connecting_node.connectByTypeOutput(this.connecting_slot,node,connType);
+                            }
+                            
                         }
-                    }
+                        
+                        
+                    //}
+                    
+                }else{
+                    
+                    // add menu when releasing link in empty space
+                	if (LiteGraph.release_link_on_empty_shows_menu){
+	                    if (e.shiftKey && this.allow_searchbox){
+	                        if(this.connecting_output){
+	                            this.showSearchBox(e,{node_from: this.connecting_node, slot_from: this.connecting_output, type_filter_in: this.connecting_output.type});
+	                        }else if(this.connecting_input){
+	                            this.showSearchBox(e,{node_to: this.connecting_node, slot_from: this.connecting_input, type_filter_out: this.connecting_input.type});
+	                        }
+	                    }else{
+	                        if(this.connecting_output){
+	                            this.showConnectionMenu({nodeFrom: this.connecting_node, slotFrom: this.connecting_output, e: e});
+	                        }else if(this.connecting_input){
+	                            this.showConnectionMenu({nodeTo: this.connecting_node, slotTo: this.connecting_input, e: e});
+	                        }
+	                    }
+                	}
                 }
 
                 this.connecting_output = null;
+                this.connecting_input = null;
                 this.connecting_pos = null;
                 this.connecting_node = null;
                 this.connecting_slot = -1;
@@ -6186,12 +6947,19 @@ LGraphNode.prototype.executeAction = function(action)
         }
 
         /*
-	if((this.dirty_canvas || this.dirty_bgcanvas) && this.rendering_timer_id == null)
-		this.draw();
-	*/
+		if((this.dirty_canvas || this.dirty_bgcanvas) && this.rendering_timer_id == null)
+			this.draw();
+		*/
 
+	  	if (is_primary)
+		{
+			this.pointer_is_down = false;
+			this.pointer_is_double = false;
+		}
+	  
         this.graph.change();
 
+        //console.log("pointerevents: processMouseUp stopPropagation");
         e.stopPropagation();
         e.preventDefault();
         return false;
@@ -6210,8 +6978,8 @@ LGraphNode.prototype.executeAction = function(action)
 
         this.adjustMouseEvent(e);
 
-		var x = e.localX;
-		var y = e.localY;
+		var x = e.clientX;
+		var y = e.clientY;
 		var is_inside = !this.viewport || ( this.viewport && x >= this.viewport[0] && x < (this.viewport[0] + this.viewport[2]) && y >= this.viewport[1] && y < (this.viewport[1] + this.viewport[3]) );
 		if(!is_inside)
 			return;
@@ -6224,8 +6992,8 @@ LGraphNode.prototype.executeAction = function(action)
             scale *= 1 / 1.1;
         }
 
-        //this.setZoom( scale, [ e.localX, e.localY ] );
-        this.ds.changeScale(scale, [e.localX, e.localY]);
+        //this.setZoom( scale, [ e.clientX, e.clientY ] );
+        this.ds.changeScale(scale, [e.clientX, e.clientY]);
 
         this.graph.change();
 
@@ -6255,7 +7023,7 @@ LGraphNode.prototype.executeAction = function(action)
     };
 
     /**
-     * returns true if a position (in graph space) is on top of a node input slot
+     * returns the INDEX if a position (in graph space) is on top of a node input slot
      * @method isOverNodeInput
      **/
     LGraphCanvas.prototype.isOverNodeInput = function(
@@ -6268,6 +7036,52 @@ LGraphNode.prototype.executeAction = function(action)
             for (var i = 0, l = node.inputs.length; i < l; ++i) {
                 var input = node.inputs[i];
                 var link_pos = node.getConnectionPos(true, i);
+                var is_inside = false;
+                if (node.horizontal) {
+                    is_inside = isInsideRectangle(
+                        canvasx,
+                        canvasy,
+                        link_pos[0] - 5,
+                        link_pos[1] - 10,
+                        10,
+                        20
+                    );
+                } else {
+                    is_inside = isInsideRectangle(
+                        canvasx,
+                        canvasy,
+                        link_pos[0] - 10,
+                        link_pos[1] - 5,
+                        40,
+                        10
+                    );
+                }
+                if (is_inside) {
+                    if (slot_pos) {
+                        slot_pos[0] = link_pos[0];
+                        slot_pos[1] = link_pos[1];
+                    }
+                    return i;
+                }
+            }
+        }
+        return -1;
+    };
+    
+    /**
+     * returns the INDEX if a position (in graph space) is on top of a node output slot
+     * @method isOverNodeOuput
+     **/
+    LGraphCanvas.prototype.isOverNodeOutput = function(
+        node,
+        canvasx,
+        canvasy,
+        slot_pos
+    ) {
+        if (node.outputs) {
+            for (var i = 0, l = node.outputs.length; i < l; ++i) {
+                var output = node.outputs[i];
+                var link_pos = node.getConnectionPos(false, i);
                 var is_inside = false;
                 if (node.horizontal) {
                     is_inside = isInsideRectangle(
@@ -6318,8 +7132,15 @@ LGraphNode.prototype.executeAction = function(action)
 
         if (e.type == "keydown") {
             if (e.keyCode == 32) {
-                //esc
+                //space
                 this.dragging_canvas = true;
+                block_default = true;
+            }
+            
+            if (e.keyCode == 27) {
+                //esc
+                if(this.node_panel) this.node_panel.close();
+                if(this.options_panel) this.options_panel.close();
                 block_default = true;
             }
 
@@ -6366,6 +7187,7 @@ LGraphNode.prototype.executeAction = function(action)
             }
         } else if (e.type == "keyup") {
             if (e.keyCode == 32) {
+                // space
                 this.dragging_canvas = false;
             }
 
@@ -6452,15 +7274,38 @@ LGraphNode.prototype.executeAction = function(action)
 
         //create nodes
         var clipboard_info = JSON.parse(data);
+        // calculate top-left node, could work without this processing but using diff with last node pos :: clipboard_info.nodes[clipboard_info.nodes.length-1].pos
+        var posMin = false;
+        var posMinIndexes = false;
+        for (var i = 0; i < clipboard_info.nodes.length; ++i) {
+            if (posMin){
+                if(posMin[0]>clipboard_info.nodes[i].pos[0]){
+                    posMin[0] = clipboard_info.nodes[i].pos[0];
+                    posMinIndexes[0] = i;
+                }
+                if(posMin[1]>clipboard_info.nodes[i].pos[1]){
+                    posMin[1] = clipboard_info.nodes[i].pos[1];
+                    posMinIndexes[1] = i;
+                }
+            }
+            else{
+                posMin = [clipboard_info.nodes[i].pos[0], clipboard_info.nodes[i].pos[1]];
+                posMinIndexes = [i, i];
+            }
+        }
         var nodes = [];
         for (var i = 0; i < clipboard_info.nodes.length; ++i) {
             var node_data = clipboard_info.nodes[i];
             var node = LiteGraph.createNode(node_data.type);
             if (node) {
                 node.configure(node_data);
-                node.pos[0] += 5;
-                node.pos[1] += 5;
-                this.graph.add(node);
+        
+				//paste in last known mouse position
+                node.pos[0] += this.graph_mouse[0] - posMin[0]; //+= 5;
+                node.pos[1] += this.graph_mouse[1] - posMin[1]; //+= 5;
+
+                this.graph.add(node,{doProcessChange:false});
+                
                 nodes.push(node);
             }
         }
@@ -6488,11 +7333,13 @@ LGraphNode.prototype.executeAction = function(action)
     LGraphCanvas.prototype.processDrop = function(e) {
         e.preventDefault();
         this.adjustMouseEvent(e);
-		var x = e.localX;
-		var y = e.localY;
+		var x = e.clientX;
+		var y = e.clientY;
 		var is_inside = !this.viewport || ( this.viewport && x >= this.viewport[0] && x < (this.viewport[0] + this.viewport[2]) && y >= this.viewport[1] && y < (this.viewport[1] + this.viewport[3]) );
-		if(!is_inside)
+		if(!is_inside){
 			return;
+			// --- BREAK ---
+		}
 
         var pos = [e.canvasX, e.canvasY];
 
@@ -6595,7 +7442,7 @@ LGraphNode.prototype.executeAction = function(action)
     };
 
     LGraphCanvas.prototype.processNodeSelected = function(node, e) {
-        this.selectNode(node, e && e.shiftKey);
+        this.selectNode(node, e && (e.shiftKey||e.ctrlKey));
         if (this.onNodeSelected) {
             this.onNodeSelected(node);
         }
@@ -6622,12 +7469,13 @@ LGraphNode.prototype.executeAction = function(action)
      **/
     LGraphCanvas.prototype.selectNodes = function( nodes, add_to_current_selection )
 	{
-        if (!add_to_current_selection) {
+		if (!add_to_current_selection) {
             this.deselectAllNodes();
         }
 
         nodes = nodes || this.graph._nodes;
-        for (var i = 0; i < nodes.length; ++i) {
+		if (typeof nodes == "string") nodes = [nodes];
+        for (var i in nodes) {
             var node = nodes[i];
             if (node.is_selected) {
                 continue;
@@ -6762,7 +7610,7 @@ LGraphNode.prototype.executeAction = function(action)
         this.setDirty(true);
 		this.graph.afterChange();
     };
-
+    
     /**
      * centers the camera on a given node
      * @method centerOnNode
@@ -6784,23 +7632,28 @@ LGraphNode.prototype.executeAction = function(action)
      * @method adjustMouseEvent
      **/
     LGraphCanvas.prototype.adjustMouseEvent = function(e) {
-        if (this.canvas) {
+	var clientX_rel = 0;
+        var clientY_rel = 0;
+	    
+    	if (this.canvas) {
             var b = this.canvas.getBoundingClientRect();
-            e.localX = e.clientX - b.left;
-            e.localY = e.clientY - b.top;
+            clientX_rel = e.clientX - b.left;
+            clientY_rel = e.clientY - b.top;
         } else {
-            e.localX = e.clientX;
-            e.localY = e.clientY;
+        	clientX_rel = e.clientX;
+        	clientY_rel = e.clientY;
         }
+    	
+        e.deltaX = clientX_rel - this.last_mouse_position[0];
+        e.deltaY = clientY_rel- this.last_mouse_position[1];
 
-        e.deltaX = e.localX - this.last_mouse_position[0];
-        e.deltaY = e.localY - this.last_mouse_position[1];
+        this.last_mouse_position[0] = clientX_rel;
+        this.last_mouse_position[1] = clientY_rel;
 
-        this.last_mouse_position[0] = e.localX;
-        this.last_mouse_position[1] = e.localY;
-
-        e.canvasX = e.localX / this.ds.scale - this.ds.offset[0];
-        e.canvasY = e.localY / this.ds.scale - this.ds.offset[1];
+        e.canvasX = clientX_rel / this.ds.scale - this.ds.offset[0];
+        e.canvasY = clientY_rel / this.ds.scale - this.ds.offset[1];
+        
+        //console.log("pointerevents: adjustMouseEvent "+e.clientX+":"+e.clientY+" "+clientX_rel+":"+clientY_rel+" "+e.canvasX+":"+e.canvasY);
     };
 
     /**
@@ -7054,8 +7907,21 @@ LGraphNode.prototype.executeAction = function(action)
             if (this.connecting_pos != null) {
                 ctx.lineWidth = this.connections_width;
                 var link_color = null;
+                
+                var connInOrOut = this.connecting_output || this.connecting_input;
 
-                switch (this.connecting_output.type) {
+                var connType = connInOrOut.type;
+                var connDir = connInOrOut.dir;
+				if(connDir == null)
+				{
+					if (this.connecting_output)
+						connDir = this.connecting_node.horizontal ? LiteGraph.DOWN : LiteGraph.RIGHT;
+					else
+						connDir = this.connecting_node.horizontal ? LiteGraph.UP : LiteGraph.LEFT;
+				}
+                var connShape = connInOrOut.shape;
+                
+                switch (connType) {
                     case LiteGraph.EVENT:
                         link_color = LiteGraph.EVENT_LINK_COLOR;
                         break;
@@ -7072,17 +7938,14 @@ LGraphNode.prototype.executeAction = function(action)
                     false,
                     null,
                     link_color,
-                    this.connecting_output.dir ||
-                        (this.connecting_node.horizontal
-                            ? LiteGraph.DOWN
-                            : LiteGraph.RIGHT),
+                    connDir,
                     LiteGraph.CENTER
                 );
 
                 ctx.beginPath();
                 if (
-                    this.connecting_output.type === LiteGraph.EVENT ||
-                    this.connecting_output.shape === LiteGraph.BOX_SHAPE
+                    connType === LiteGraph.EVENT ||
+                    connShape === LiteGraph.BOX_SHAPE
                 ) {
                     ctx.rect(
                         this.connecting_pos[0] - 6 + 0.5,
@@ -7090,7 +7953,15 @@ LGraphNode.prototype.executeAction = function(action)
                         14,
                         10
                     );
-                } else if (this.connecting_output.shape === LiteGraph.ARROW_SHAPE) {
+	                ctx.fill();
+					ctx.beginPath();
+                    ctx.rect(
+                        this.graph_mouse[0] - 6 + 0.5,
+                        this.graph_mouse[1] - 5 + 0.5,
+                        14,
+                        10
+                    );
+                } else if (connShape === LiteGraph.ARROW_SHAPE) {
                     ctx.moveTo(this.connecting_pos[0] + 8, this.connecting_pos[1] + 0.5);
                     ctx.lineTo(this.connecting_pos[0] - 4, this.connecting_pos[1] + 6 + 0.5);
                     ctx.lineTo(this.connecting_pos[0] - 4, this.connecting_pos[1] - 6 + 0.5);
@@ -7100,6 +7971,15 @@ LGraphNode.prototype.executeAction = function(action)
                     ctx.arc(
                         this.connecting_pos[0],
                         this.connecting_pos[1],
+                        4,
+                        0,
+                        Math.PI * 2
+                    );
+	                ctx.fill();
+					ctx.beginPath();
+                    ctx.arc(
+                        this.graph_mouse[0],
+                        this.graph_mouse[1],
                         4,
                         0,
                         Math.PI * 2
@@ -7120,6 +8000,24 @@ LGraphNode.prototype.executeAction = function(action)
                         ctx.arc(
                             this._highlight_input[0],
                             this._highlight_input[1],
+                            6,
+                            0,
+                            Math.PI * 2
+                        );
+                    }
+                    ctx.fill();
+                }
+                if (this._highlight_output) {
+                    ctx.beginPath();
+                    if (shape === LiteGraph.ARROW_SHAPE) {
+                        ctx.moveTo(this._highlight_output[0] + 8, this._highlight_output[1] + 0.5);
+                        ctx.lineTo(this._highlight_output[0] - 4, this._highlight_output[1] + 6 + 0.5);
+                        ctx.lineTo(this._highlight_output[0] - 4, this._highlight_output[1] - 6 + 0.5);
+                        ctx.closePath();
+                    } else {
+                        ctx.arc(
+                            this._highlight_output[0],
+                            this._highlight_output[1],
                             6,
                             0,
                             Math.PI * 2
@@ -7165,7 +8063,7 @@ LGraphNode.prototype.executeAction = function(action)
             this.onDrawOverlay(ctx);
         }
 
-        if (area) {
+        if (area){
             ctx.restore();
         }
 
@@ -7189,6 +8087,7 @@ LGraphNode.prototype.executeAction = function(action)
         this.drawSubgraphPanelLeft(subgraph, subnode, ctx)
         this.drawSubgraphPanelRight(subgraph, subnode, ctx)
     }
+
     LGraphCanvas.prototype.drawSubgraphPanelLeft = function (subgraph, subnode, ctx) {
         var num = subnode.inputs ? subnode.inputs.length : 0;
         var w = 200;
@@ -7197,7 +8096,7 @@ LGraphNode.prototype.executeAction = function(action)
         ctx.fillStyle = "#111";
         ctx.globalAlpha = 0.8;
         ctx.beginPath();
-        ctx.roundRect(10, 10, w, (num + 1) * h + 50, 8);
+        ctx.roundRect(10, 10, w, (num + 1) * h + 50, [8]);
         ctx.fill();
         ctx.globalAlpha = 1;
 
@@ -7266,7 +8165,7 @@ LGraphNode.prototype.executeAction = function(action)
         ctx.fillStyle = "#111";
         ctx.globalAlpha = 0.8;
         ctx.beginPath();
-        ctx.roundRect(canvas_w - w - 10, 10, w, (num + 1) * h + 50, 8);
+        ctx.roundRect(canvas_w - w - 10, 10, w, (num + 1) * h + 50, [8]);
         ctx.fill();
         ctx.globalAlpha = 1;
 
@@ -7334,17 +8233,17 @@ LGraphNode.prototype.executeAction = function(action)
 		bgcolor = bgcolor || LiteGraph.NODE_DEFAULT_COLOR;
 		hovercolor = hovercolor || "#555";
 		textcolor = textcolor || LiteGraph.NODE_TEXT_COLOR;
-
+		var yFix = y + LiteGraph.NODE_TITLE_HEIGHT + 2;	// fix the height with the title
 		var pos = this.mouse;
-		var hover = LiteGraph.isInsideRectangle( pos[0], pos[1], x,y,w,h );
+		var hover = LiteGraph.isInsideRectangle( pos[0], pos[1], x,yFix,w,h );
 		pos = this.last_click_position;
-		var clicked = pos && LiteGraph.isInsideRectangle( pos[0], pos[1], x,y,w,h );
+		var clicked = pos && LiteGraph.isInsideRectangle( pos[0], pos[1], x,yFix,w,h );
 
 		ctx.fillStyle = hover ? hovercolor : bgcolor;
 		if(clicked)
 			ctx.fillStyle = "#AAA";
 		ctx.beginPath();
-		ctx.roundRect(x,y,w,h,4 );
+		ctx.roundRect(x,y,w,h,[4] );
 		ctx.fill();
 
 		if(text != null)
@@ -7487,7 +8386,7 @@ LGraphNode.prototype.executeAction = function(action)
                 } else {
                     ctx.globalAlpha = this.editor_alpha;
                 }
-                ctx.imageSmoothingEnabled = ctx.mozImageSmoothingEnabled = ctx.imageSmoothingEnabled = false;
+                ctx.imageSmoothingEnabled = ctx.imageSmoothingEnabled = false; // ctx.mozImageSmoothingEnabled = 
                 if (
                     !this._bg_img ||
                     this._bg_img.name != this.background_image
@@ -7521,7 +8420,7 @@ LGraphNode.prototype.executeAction = function(action)
                 }
 
                 ctx.globalAlpha = 1.0;
-                ctx.imageSmoothingEnabled = ctx.mozImageSmoothingEnabled = ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingEnabled = ctx.imageSmoothingEnabled = true; //= ctx.mozImageSmoothingEnabled
             }
 
             //groups
@@ -7657,7 +8556,7 @@ LGraphNode.prototype.executeAction = function(action)
             if (shape == LiteGraph.BOX_SHAPE) {
                 ctx.rect(0, 0, size[0], size[1]);
             } else if (shape == LiteGraph.ROUND_SHAPE) {
-                ctx.roundRect(0, 0, size[0], size[1], 10);
+                ctx.roundRect(0, 0, size[0], size[1], [10]);
             } else if (shape == LiteGraph.CIRCLE_SHAPE) {
                 ctx.arc(
                     size[0] * 0.5,
@@ -7697,6 +8596,7 @@ LGraphNode.prototype.executeAction = function(action)
         var render_text = !low_quality;
 
         var out_slot = this.connecting_output;
+        var in_slot = this.connecting_input;
         ctx.lineWidth = 1;
 
         var max_y = 0;
@@ -7708,18 +8608,24 @@ LGraphNode.prototype.executeAction = function(action)
             if (node.inputs) {
                 for (var i = 0; i < node.inputs.length; i++) {
                     var slot = node.inputs[i];
-
+                    
+                    var slot_type = slot.type;
+                    var slot_shape = slot.shape;
+                    
                     ctx.globalAlpha = editor_alpha;
                     //change opacity of incompatible slots when dragging a connection
-                    if ( this.connecting_node && !LiteGraph.isValidConnection( slot.type , out_slot.type) ) {
+                    if ( this.connecting_output && !LiteGraph.isValidConnection( slot.type , out_slot.type) ) {
                         ctx.globalAlpha = 0.4 * editor_alpha;
                     }
 
                     ctx.fillStyle =
                         slot.link != null
                             ? slot.color_on ||
+                              this.default_connection_color_byType[slot_type] ||
                               this.default_connection_color.input_on
                             : slot.color_off ||
+                              this.default_connection_color_byTypeOff[slot_type] ||
+                              this.default_connection_color_byType[slot_type] ||
                               this.default_connection_color.input_off;
 
                     var pos = node.getConnectionPos(true, i, slot_pos);
@@ -7731,6 +8637,12 @@ LGraphNode.prototype.executeAction = function(action)
 
                     ctx.beginPath();
 
+					if (slot_type == "array"){
+                        slot_shape = LiteGraph.GRID_SHAPE; // place in addInput? addOutput instead?
+                    }
+                    
+                    var doStroke = true;
+                    
                     if (
                         slot.type === LiteGraph.EVENT ||
                         slot.shape === LiteGraph.BOX_SHAPE
@@ -7750,11 +8662,22 @@ LGraphNode.prototype.executeAction = function(action)
                                 10
                             );
                         }
-                    } else if (slot.shape === LiteGraph.ARROW_SHAPE) {
+                    } else if (slot_shape === LiteGraph.ARROW_SHAPE) {
                         ctx.moveTo(pos[0] + 8, pos[1] + 0.5);
                         ctx.lineTo(pos[0] - 4, pos[1] + 6 + 0.5);
                         ctx.lineTo(pos[0] - 4, pos[1] - 6 + 0.5);
                         ctx.closePath();
+                    } else if (slot_shape === LiteGraph.GRID_SHAPE) {
+                        ctx.rect(pos[0] - 4, pos[1] - 4, 2, 2);
+                        ctx.rect(pos[0] - 1, pos[1] - 4, 2, 2);
+                        ctx.rect(pos[0] + 2, pos[1] - 4, 2, 2);
+                        ctx.rect(pos[0] - 4, pos[1] - 1, 2, 2);
+                        ctx.rect(pos[0] - 1, pos[1] - 1, 2, 2);
+                        ctx.rect(pos[0] + 2, pos[1] - 1, 2, 2);
+                        ctx.rect(pos[0] - 4, pos[1] + 2, 2, 2);
+                        ctx.rect(pos[0] - 1, pos[1] + 2, 2, 2);
+                        ctx.rect(pos[0] + 2, pos[1] + 2, 2, 2);
+                        doStroke = false;
                     } else {
 						if(low_quality)
 	                        ctx.rect(pos[0] - 4, pos[1] - 4, 8, 8 ); //faster
@@ -7779,16 +8702,21 @@ LGraphNode.prototype.executeAction = function(action)
             }
 
             //output connection slots
-            if (this.connecting_node) {
-                ctx.globalAlpha = 0.4 * editor_alpha;
-            }
 
             ctx.textAlign = horizontal ? "center" : "right";
             ctx.strokeStyle = "black";
             if (node.outputs) {
                 for (var i = 0; i < node.outputs.length; i++) {
                     var slot = node.outputs[i];
-
+                    
+                    var slot_type = slot.type;
+                    var slot_shape = slot.shape;
+                    
+                    //change opacity of incompatible slots when dragging a connection
+                    if (this.connecting_input && !LiteGraph.isValidConnection( slot_type , in_slot.type) ) {
+                        ctx.globalAlpha = 0.4 * editor_alpha;
+                    }
+                    
                     var pos = node.getConnectionPos(false, i, slot_pos);
                     pos[0] -= node.pos[0];
                     pos[1] -= node.pos[1];
@@ -7799,15 +8727,24 @@ LGraphNode.prototype.executeAction = function(action)
                     ctx.fillStyle =
                         slot.links && slot.links.length
                             ? slot.color_on ||
+                              this.default_connection_color_byType[slot_type] ||
                               this.default_connection_color.output_on
                             : slot.color_off ||
+                              this.default_connection_color_byTypeOff[slot_type] ||
+                              this.default_connection_color_byType[slot_type] ||
                               this.default_connection_color.output_off;
                     ctx.beginPath();
                     //ctx.rect( node.size[0] - 14,i*14,10,10);
 
+					if (slot_type == "array"){
+                        slot_shape = LiteGraph.GRID_SHAPE;
+                    }
+                    
+                    var doStroke = true;
+                    
                     if (
-                        slot.type === LiteGraph.EVENT ||
-                        slot.shape === LiteGraph.BOX_SHAPE
+                        slot_type === LiteGraph.EVENT ||
+                        slot_shape === LiteGraph.BOX_SHAPE
                     ) {
                         if (horizontal) {
                             ctx.rect(
@@ -7824,11 +8761,22 @@ LGraphNode.prototype.executeAction = function(action)
                                 10
                             );
                         }
-                    } else if (slot.shape === LiteGraph.ARROW_SHAPE) {
+                    } else if (slot_shape === LiteGraph.ARROW_SHAPE) {
                         ctx.moveTo(pos[0] + 8, pos[1] + 0.5);
                         ctx.lineTo(pos[0] - 4, pos[1] + 6 + 0.5);
                         ctx.lineTo(pos[0] - 4, pos[1] - 6 + 0.5);
                         ctx.closePath();
+                    }  else if (slot_shape === LiteGraph.GRID_SHAPE) {
+                        ctx.rect(pos[0] - 4, pos[1] - 4, 2, 2);
+                        ctx.rect(pos[0] - 1, pos[1] - 4, 2, 2);
+                        ctx.rect(pos[0] + 2, pos[1] - 4, 2, 2);
+                        ctx.rect(pos[0] - 4, pos[1] - 1, 2, 2);
+                        ctx.rect(pos[0] - 1, pos[1] - 1, 2, 2);
+                        ctx.rect(pos[0] + 2, pos[1] - 1, 2, 2);
+                        ctx.rect(pos[0] - 4, pos[1] + 2, 2, 2);
+                        ctx.rect(pos[0] - 1, pos[1] + 2, 2, 2);
+                        ctx.rect(pos[0] + 2, pos[1] + 2, 2, 2);
+                        doStroke = false;
                     } else {
 						if(low_quality)
 	                        ctx.rect(pos[0] - 4, pos[1] - 4, 8, 8 );
@@ -7842,7 +8790,7 @@ LGraphNode.prototype.executeAction = function(action)
 
                     //if(slot.links != null && slot.links.length)
                     ctx.fill();
-					if(!low_quality)
+					if(!low_quality && doStroke)
 	                    ctx.stroke();
 
                     //render output name
@@ -8009,7 +8957,7 @@ LGraphNode.prototype.executeAction = function(action)
 		ctx.shadowBlur = 3;
 		ctx.fillStyle = "#454";
 		ctx.beginPath();
-		ctx.roundRect( pos[0] - w*0.5, pos[1] - 15 - h, w, h,3, 3);
+		ctx.roundRect( pos[0] - w*0.5, pos[1] - 15 - h, w, h, [3]);
 		ctx.moveTo( pos[0] - 10, pos[1] - 15 );
 		ctx.lineTo( pos[0] + 10, pos[1] - 15 );
 		ctx.lineTo( pos[0], pos[1] - 5 );
@@ -8049,7 +8997,7 @@ LGraphNode.prototype.executeAction = function(action)
         var title_mode = node.constructor.title_mode;
 
         var render_title = true;
-        if (title_mode == LiteGraph.TRANSPARENT_TITLE) {
+        if (title_mode == LiteGraph.TRANSPARENT_TITLE || title_mode == LiteGraph.NO_TITLE) {
             render_title = false;
         } else if (title_mode == LiteGraph.AUTOHIDE_TITLE && mouse_over) {
             render_title = true;
@@ -8078,8 +9026,7 @@ LGraphNode.prototype.executeAction = function(action)
                     area[1],
                     area[2],
                     area[3],
-                    this.round_radius,
-                    shape == LiteGraph.CARD_SHAPE ? 0 : this.round_radius
+                    shape == LiteGraph.CARD_SHAPE ? [this.round_radius,this.round_radius,0,0] : [this.round_radius] 
                 );
             } else if (shape == LiteGraph.CIRCLE_SHAPE) {
                 ctx.arc(
@@ -8126,7 +9073,7 @@ LGraphNode.prototype.executeAction = function(action)
                     var grad = LGraphCanvas.gradients[title_color];
                     if (!grad) {
                         grad = LGraphCanvas.gradients[ title_color ] = ctx.createLinearGradient(0, 0, 400, 0);
-                        grad.addColorStop(0, title_color);
+                        grad.addColorStop(0, title_color); // TODO refactor: validate color !! prevent DOMException
                         grad.addColorStop(1, "#000");
                     }
                     ctx.fillStyle = grad;
@@ -8144,14 +9091,23 @@ LGraphNode.prototype.executeAction = function(action)
                         -title_height,
                         size[0] + 1,
                         title_height,
-                        this.round_radius,
-                        node.flags.collapsed ? this.round_radius : 0
+                        node.flags.collapsed ? [this.round_radius] : [this.round_radius,this.round_radius,0,0]
                     );
                 }
                 ctx.fill();
                 ctx.shadowColor = "transparent";
             }
 
+            var colState = false;
+            if (LiteGraph.node_box_coloured_by_mode){
+                if(LiteGraph.NODE_MODES_COLORS[node.mode]){
+                    colState = LiteGraph.NODE_MODES_COLORS[node.mode];
+                }
+            }
+            if (LiteGraph.node_box_coloured_when_on){
+                colState = node.action_triggered ? "#FFF" : (node.execute_triggered ? "#AAA" : colState);
+            }
+            
             //title box
             var box_size = 10;
             if (node.onDrawTitleBox) {
@@ -8173,8 +9129,8 @@ LGraphNode.prototype.executeAction = function(action)
                     );
                     ctx.fill();
                 }
-
-                ctx.fillStyle = node.boxcolor || LiteGraph.NODE_DEFAULT_BOXCOLOR;
+                
+                ctx.fillStyle = node.boxcolor || colState || LiteGraph.NODE_DEFAULT_BOXCOLOR;
 				if(low_quality)
 					ctx.fillRect( title_height * 0.5 - box_size *0.5, title_height * -0.5 - box_size *0.5, box_size , box_size  );
 				else
@@ -8199,7 +9155,7 @@ LGraphNode.prototype.executeAction = function(action)
                         box_size + 2
                     );
                 }
-                ctx.fillStyle = node.boxcolor || LiteGraph.NODE_DEFAULT_BOXCOLOR;
+                ctx.fillStyle = node.boxcolor || colState || LiteGraph.NODE_DEFAULT_BOXCOLOR;
                 ctx.fillRect(
                     (title_height - box_size) * 0.5,
                     (title_height + box_size) * -0.5,
@@ -8262,7 +9218,7 @@ LGraphNode.prototype.executeAction = function(action)
 				else
 				{
 					ctx.beginPath();
-					ctx.roundRect(x+2, -w+2, w-4, w-4,4);
+					ctx.roundRect(x+2, -w+2, w-4, w-4,[4]);
 					ctx.fill();
 				}
 				ctx.fillStyle = "#333";
@@ -8308,7 +9264,7 @@ LGraphNode.prototype.executeAction = function(action)
                     -6 + area[1],
                     12 + area[2],
                     12 + area[3],
-                    this.round_radius * 2
+                    [this.round_radius * 2]
                 );
             } else if (shape == LiteGraph.CARD_SHAPE) {
                 ctx.roundRect(
@@ -8316,8 +9272,7 @@ LGraphNode.prototype.executeAction = function(action)
                     -6 + area[1],
                     12 + area[2],
                     12 + area[3],
-                    this.round_radius * 2,
-                    2
+                    [this.round_radius * 2,2,this.round_radius * 2,2]
                 );
             } else if (shape == LiteGraph.CIRCLE_SHAPE) {
                 ctx.arc(
@@ -8333,6 +9288,10 @@ LGraphNode.prototype.executeAction = function(action)
             ctx.strokeStyle = fgcolor;
             ctx.globalAlpha = 1;
         }
+        
+        // these counter helps in conditioning drawing based on if the node has been executed or an action occurred
+        if (node.execute_triggered>0) node.execute_triggered--;
+        if (node.action_triggered>0) node.action_triggered--;
     };
 
     var margin_area = new Float32Array(4);
@@ -8907,9 +9866,9 @@ LGraphNode.prototype.executeAction = function(action)
                     ctx.fillStyle = background_color;
                     ctx.beginPath();
                     if (show_text)
-	                    ctx.roundRect(margin, posY, widget_width - margin * 2, H, H * 0.5);
+	                    ctx.roundRect(margin, y, widget_width - margin * 2, H, [H * 0.5]);
 					else
-	                    ctx.rect(margin, posY, widget_width - margin * 2, H );
+	                    ctx.rect(margin, y, widget_width - margin * 2, H );
                     ctx.fill();
 					if(show_text && !w.disabled)
 	                    ctx.stroke();
@@ -8964,9 +9923,9 @@ LGraphNode.prototype.executeAction = function(action)
                     ctx.fillStyle = background_color;
                     ctx.beginPath();
 					if(show_text)
-	                    ctx.roundRect(margin, posY, widget_width - margin * 2, H, H * 0.5);
+	                    ctx.roundRect(margin, y, widget_width - margin * 2, H, [H * 0.5] );
 					else
-	                    ctx.rect(margin, posY, widget_width - margin * 2, H );
+	                    ctx.rect(margin, y, widget_width - margin * 2, H );
                     ctx.fill();
                     if (show_text) {
 						if(!w.disabled)
@@ -8975,14 +9934,14 @@ LGraphNode.prototype.executeAction = function(action)
 						if(!w.disabled)
 						{
 							ctx.beginPath();
-							ctx.moveTo(margin + 16, posY + 5);
-							ctx.lineTo(margin + 6, posY + H * 0.5);
-							ctx.lineTo(margin + 16, posY + H - 5);
+							ctx.moveTo(margin + 16, y + 5);
+							ctx.lineTo(margin + 6, y + H * 0.5);
+							ctx.lineTo(margin + 16, y + H - 5);
 							ctx.fill();
 							ctx.beginPath();
-							ctx.moveTo(widget_width - margin - 16, posY + 5);
-							ctx.lineTo(widget_width - margin - 6, posY + H * 0.5);
-							ctx.lineTo(widget_width - margin - 16, posY + H - 5);
+							ctx.moveTo(widget_width - margin - 16, y + 5);
+							ctx.lineTo(widget_width - margin - 6, y + H * 0.5);
+							ctx.lineTo(widget_width - margin - 16, y + H - 5);
 							ctx.fill();
 						}
                         ctx.fillStyle = secondary_text_color;
@@ -9024,16 +9983,16 @@ LGraphNode.prototype.executeAction = function(action)
                     ctx.fillStyle = background_color;
                     ctx.beginPath();
                     if (show_text)
-	                    ctx.roundRect(margin, posY, widget_width - margin * 2, H, H * 0.5);
+	                    ctx.roundRect(margin, y, widget_width - margin * 2, H, [H * 0.5]);
 					else
-	                    ctx.rect( margin, posY, widget_width - margin * 2, H );
+	                    ctx.rect( margin, y, widget_width - margin * 2, H );
                     ctx.fill();
 	                if (show_text) {
 						if(!w.disabled)
 							ctx.stroke();
     					ctx.save();
 						ctx.beginPath();
-						ctx.rect(margin, posY, widget_width - margin * 2, H);
+						ctx.rect(margin, y, widget_width - margin * 2, H);
 						ctx.clip();
 
 	                    //ctx.stroke();
@@ -9098,7 +10057,7 @@ LGraphNode.prototype.executeAction = function(action)
 			//inside widget
 			switch (w.type) {
 				case "button":
-					if (event.type === "mousedown") {
+					if (event.type === LiteGraph.pointerevents_method+"down") {
                         if (w.callback) {
                             setTimeout(function() {
                                 w.callback(w, that, node, pos, event);
@@ -9122,7 +10081,7 @@ LGraphNode.prototype.executeAction = function(action)
 				case "number":
 				case "combo":
 					var old_value = w.value;
-					if (event.type == "mousemove" && w.type == "number") {
+					if (event.type == LiteGraph.pointerevents_method+"move" && w.type == "number") {
 						w.value += event.deltaX * 0.1 * (w.options.step || 1);
 						if ( w.options.min != null && w.value < w.options.min ) {
 							w.value = w.options.min;
@@ -9130,7 +10089,7 @@ LGraphNode.prototype.executeAction = function(action)
 						if ( w.options.max != null && w.value > w.options.max ) {
 							w.value = w.options.max;
 						}
-					} else if (event.type == "mousedown") {
+					} else if (event.type == LiteGraph.pointerevents_method+"down") {
 						var values = w.options.values;
 						if (values && values.constructor === Function) {
 							values = w.options.values(w, node);
@@ -9185,7 +10144,7 @@ LGraphNode.prototype.executeAction = function(action)
 							}
 						}
 					} //end mousedown
-					else if(event.type == "mouseup" && w.type == "number")
+					else if(event.type == LiteGraph.pointerevents_method+"up" && w.type == "number")
 					{
 						var delta = x < 40 ? -1 : x > widget_width - 40 ? 1 : 0;
 						if (event.click_time < 200 && delta == 0) {
@@ -9207,7 +10166,7 @@ LGraphNode.prototype.executeAction = function(action)
 					this.dirty_canvas = true;
 					break;
 				case "toggle":
-					if (event.type == "mousedown") {
+					if (event.type == LiteGraph.pointerevents_method+"down") {
 						w.value = !w.value;
 						setTimeout(function() {
 							inner_value_change(w, w.value);
@@ -9216,7 +10175,7 @@ LGraphNode.prototype.executeAction = function(action)
 					break;
 				case "string":
 				case "text":
-					if (event.type == "mousedown") {
+					if (event.type == LiteGraph.pointerevents_method+"down") {
 						this.prompt("Value",w.value,function(v) {
 								this.value = v;
 								inner_value_change(this, v);
@@ -9296,6 +10255,7 @@ LGraphNode.prototype.executeAction = function(action)
             var font_size =
                 group.font_size || LiteGraph.DEFAULT_GROUP_FONT_SIZE;
             ctx.font = font_size + "px Arial";
+			ctx.textAlign = "left";
             ctx.fillText(group.title, pos[0] + 4, pos[1] + font_size);
         }
 
@@ -9374,7 +10334,9 @@ LGraphNode.prototype.executeAction = function(action)
         return; //disabled
     };
 
-    LGraphCanvas.prototype.touchHandler = function(event) {
+    /* this is an implementation for touch not in production and not ready
+     */
+    /*LGraphCanvas.prototype.touchHandler = function(event) {
         //alert("foo");
         var touches = event.changedTouches,
             first = touches[0],
@@ -9398,7 +10360,13 @@ LGraphNode.prototype.executeAction = function(action)
         //           screenX, screenY, clientX, clientY, ctrlKey,
         //           altKey, shiftKey, metaKey, button, relatedTarget);
 
-        var window = this.getCanvasWindow();
+        // this is eventually a Dom object, get the LGraphCanvas back
+        if(typeof this.getCanvasWindow == "undefined"){
+            var window = this.lgraphcanvas.getCanvasWindow();
+        }else{
+            var window = this.getCanvasWindow();
+        }
+        
         var document = window.document;
 
         var simulatedEvent = document.createEvent("MouseEvent");
@@ -9416,12 +10384,12 @@ LGraphNode.prototype.executeAction = function(action)
             false,
             false,
             false,
-            0 /*left*/,
+            0, //left
             null
         );
         first.target.dispatchEvent(simulatedEvent);
         event.preventDefault();
-    };
+    };*/
 
     /* CONTEXT MENU ********************/
 
@@ -9537,9 +10505,14 @@ LGraphNode.prototype.executeAction = function(action)
                     continue;
                 }
                 var label = entry[0];
-                if (entry[2] && entry[2].label) {
+				if(!entry[2])
+					entry[2] = {};
+
+                if (entry[2].label) {
                     label = entry[2].label;
                 }
+
+				entry[2].removable = true;
                 var data = { content: label, value: entry };
                 if (entry[1] == LiteGraph.ACTION) {
                     data.className = "event";
@@ -9548,8 +10521,9 @@ LGraphNode.prototype.executeAction = function(action)
             }
         }
 
-        if (this.onMenuNodeInputs) {
-            entries = this.onMenuNodeInputs(entries);
+        if (node.onMenuNodeInputs) {
+            var retEntries = node.onMenuNodeInputs(entries);
+            if(retEntries) entries = retEntries;
         }
 
         if (!entries.length) {
@@ -9580,6 +10554,10 @@ LGraphNode.prototype.executeAction = function(action)
             if (v.value) {
 				node.graph.beforeChange();
                 node.addInput(v.value[0], v.value[1], v.value[2]);
+
+                if (node.onNodeInputAdd) { // callback to the node when adding a slot
+                    node.onNodeInputAdd(v.value);
+                }
                 node.setDirtyCanvas(true, true);
 				node.graph.afterChange();
             }
@@ -9626,9 +10604,12 @@ LGraphNode.prototype.executeAction = function(action)
                     continue;
                 } //skip the ones already on
                 var label = entry[0];
-                if (entry[2] && entry[2].label) {
+				if(!entry[2])
+					entry[2] = {};
+                if (entry[2].label) {
                     label = entry[2].label;
                 }
+				entry[2].removable = true;
                 var data = { content: label, value: entry };
                 if (entry[1] == LiteGraph.EVENT) {
                     data.className = "event";
@@ -9639,6 +10620,16 @@ LGraphNode.prototype.executeAction = function(action)
 
         if (this.onMenuNodeOutputs) {
             entries = this.onMenuNodeOutputs(entries);
+        }
+        if (LiteGraph.do_add_triggers_slots){ //canvas.allow_addOutSlot_onExecuted
+            if (node.findOutputSlot("onExecuted") == -1){
+                entries.push({content: "On Executed", value: ["onExecuted", LiteGraph.EVENT, {nameLocked: true}], className: "event"}); //, opts: {}
+            }
+        }
+        // add callback for modifing the menu elements onMenuNodeOutputs
+        if (node.onMenuNodeOutputs) {
+            var retEntries = node.onMenuNodeOutputs(entries);
+            if(retEntries) entries = retEntries;
         }
 
         if (!entries.length) {
@@ -9690,6 +10681,10 @@ LGraphNode.prototype.executeAction = function(action)
             } else {
 				node.graph.beforeChange();
                 node.addOutput(v.value[0], v.value[1], v.value[2]);
+
+                if (node.onNodeOutputAdd) { // a callback to the node when adding a slot
+                    node.onNodeOutputAdd(v.value);
+                }
                 node.setDirtyCanvas(true, true);
 				node.graph.afterChange();
             }
@@ -9770,20 +10765,42 @@ LGraphNode.prototype.executeAction = function(action)
         return e.innerHTML;
     };
 
-    LGraphCanvas.onResizeNode = function(value, options, e, menu, node) {
+    LGraphCanvas.onMenuResizeNode = function(value, options, e, menu, node) {
         if (!node) {
             return;
         }
-        node.size = node.computeSize();
-        if (node.onResize)
-            node.onResize(node.size);
+        
+		var fApplyMultiNode = function(node){
+			node.size = node.computeSize();
+			if (node.onResize)
+				node.onResize(node.size);
+		}
+		
+		var graphcanvas = LGraphCanvas.active_canvas;
+		if (!graphcanvas.selected_nodes || Object.keys(graphcanvas.selected_nodes).length <= 1){
+			fApplyMultiNode(node);
+		}else{
+			for (var i in graphcanvas.selected_nodes) {
+				fApplyMultiNode(graphcanvas.selected_nodes[i]);
+			}
+		}
+		
         node.setDirtyCanvas(true, true);
     };
 
     LGraphCanvas.prototype.showLinkMenu = function(link, e) {
         var that = this;
-		console.log(link);
-		var options = ["Add Node",null,"Delete"];
+		// console.log(link);
+		var node_left = that.graph.getNodeById( link.origin_id );
+		var node_right = that.graph.getNodeById( link.target_id );
+		var fromType = false;
+		if (node_left && node_left.outputs && node_left.outputs[link.origin_slot]) fromType = node_left.outputs[link.origin_slot].type;
+        var destType = false;
+		if (node_right && node_right.outputs && node_right.outputs[link.target_slot]) destType = node_right.inputs[link.target_slot].type;
+		
+		var options = ["Add Node",null,"Delete",null];
+		
+		
         var menu = new LiteGraph.ContextMenu(options, {
             event: e,
 			title: link.data != null ? link.data.constructor.name : null,
@@ -9794,38 +10811,314 @@ LGraphNode.prototype.executeAction = function(action)
             switch (v) {
                 case "Add Node":
 					LGraphCanvas.onMenuAdd(null, null, e, menu, function(node){
-						console.log("node autoconnect");
-						var node_left = that.graph.getNodeById( link.origin_id );
-						var node_right = that.graph.getNodeById( link.target_id );
-						if(!node.inputs || !node.inputs.length || !node.outputs || !node.outputs.length)
+						// console.debug("node autoconnect");
+						if(!node.inputs || !node.inputs.length || !node.outputs || !node.outputs.length){
 							return;
-						if( node_left.outputs[ link.origin_slot ].type == node.inputs[0].type && node.outputs[0].type == node_right.inputs[0].type )
-						{
-							node_left.connect( link.origin_slot, node, 0 );
-							node.connect( 0, node_right, link.target_slot );
-							node.pos[0] -= node.size[0] * 0.5;
 						}
+						// leave the connection type checking inside connectByType
+						if (node_left.connectByType( link.origin_slot, node, fromType )){
+                        	node.connectByType( link.target_slot, node_right, destType );
+                            node.pos[0] -= node.size[0] * 0.5;
+                        }
 					});
 					break;
+					
                 case "Delete":
                     that.graph.removeLink(link.id);
                     break;
                 default:
+					/*var nodeCreated = createDefaultNodeForSlot({   nodeFrom: node_left
+																	,slotFrom: link.origin_slot
+																	,nodeTo: node
+																	,slotTo: link.target_slot
+																	,e: e
+																	,nodeType: "AUTO"
+																});
+					if(nodeCreated) console.log("new node in beetween "+v+" created");*/
             }
         }
 
         return false;
     };
+    
+ 	LGraphCanvas.prototype.createDefaultNodeForSlot = function(optPass) { // addNodeMenu for connection
+        var optPass = optPass || {};
+        var opts = Object.assign({   nodeFrom: null // input
+                                    ,slotFrom: null // input
+                                    ,nodeTo: null   // output
+                                    ,slotTo: null   // output
+                                    ,position: []	// pass the event coords
+								  	,nodeType: null	// choose a nodetype to add, AUTO to set at first good
+								  	,posAdd:[0,0]	// adjust x,y
+								  	,posSizeFix:[0,0] // alpha, adjust the position x,y based on the new node size w,h
+                                }
+                                ,optPass
+                            );
+        var that = this;
+        
+        var isFrom = opts.nodeFrom && opts.slotFrom!==null;
+        var isTo = !isFrom && opts.nodeTo && opts.slotTo!==null;
+	
+        if (!isFrom && !isTo){
+            console.warn("No data passed to createDefaultNodeForSlot "+opts.nodeFrom+" "+opts.slotFrom+" "+opts.nodeTo+" "+opts.slotTo);
+            return false;
+        }
+		if (!opts.nodeType){
+            console.warn("No type to createDefaultNodeForSlot");
+            return false;
+        }
+        
+        var nodeX = isFrom ? opts.nodeFrom : opts.nodeTo;
+        var slotX = isFrom ? opts.slotFrom : opts.slotTo;
+        
+        var iSlotConn = false;
+        switch (typeof slotX){
+            case "string":
+                iSlotConn = isFrom ? nodeX.findOutputSlot(slotX,false) : nodeX.findInputSlot(slotX,false);
+                slotX = isFrom ? nodeX.outputs[slotX] : nodeX.inputs[slotX];
+            break;
+            case "object":
+                // ok slotX
+                iSlotConn = isFrom ? nodeX.findOutputSlot(slotX.name) : nodeX.findInputSlot(slotX.name);
+            break;
+            case "number":
+                iSlotConn = slotX;
+                slotX = isFrom ? nodeX.outputs[slotX] : nodeX.inputs[slotX];
+            break;
+			case "undefined":
+            default:
+                // bad ?
+                //iSlotConn = 0;
+                console.warn("Cant get slot information "+slotX);
+                return false;
+        }
+	
+		if (slotX===false || iSlotConn===false){
+			console.warn("createDefaultNodeForSlot bad slotX "+slotX+" "+iSlotConn);
+		}
+		
+		// check for defaults nodes for this slottype
+		var fromSlotType = slotX.type==LiteGraph.EVENT?"_event_":slotX.type;
+		var slotTypesDefault = isFrom ? LiteGraph.slot_types_default_out : LiteGraph.slot_types_default_in;
+		if(slotTypesDefault && slotTypesDefault[fromSlotType]){
+			if (slotX.link !== null) {
+				// is connected
+			}else{
+				// is not not connected
+			}
+			nodeNewType = false;
+			if(typeof slotTypesDefault[fromSlotType] == "object" || typeof slotTypesDefault[fromSlotType] == "array"){
+				for(var typeX in slotTypesDefault[fromSlotType]){
+					if (opts.nodeType == slotTypesDefault[fromSlotType][typeX] || opts.nodeType == "AUTO"){
+						nodeNewType = slotTypesDefault[fromSlotType][typeX];
+						// console.log("opts.nodeType == slotTypesDefault[fromSlotType][typeX] :: "+opts.nodeType);
+						break; // --------
+					}
+				}
+			}else{
+				if (opts.nodeType == slotTypesDefault[fromSlotType] || opts.nodeType == "AUTO") nodeNewType = slotTypesDefault[fromSlotType];
+			}
+			if (nodeNewType) {
+				var nodeNewOpts = false;
+				if (typeof nodeNewType == "object" && nodeNewType.node){
+					nodeNewOpts = nodeNewType;
+					nodeNewType = nodeNewType.node;
+				}
+				
+				//that.graph.beforeChange();
+				
+				var newNode = LiteGraph.createNode(nodeNewType);
+				if(newNode){
+					// if is object pass options
+					if (nodeNewOpts){
+						if (nodeNewOpts.properties) {
+							for (var i in nodeNewOpts.properties) {
+								newNode.addProperty( i, nodeNewOpts.properties[i] );
+							}
+						}
+						if (nodeNewOpts.inputs) {
+							newNode.inputs = [];
+							for (var i in nodeNewOpts.inputs) {
+								newNode.addOutput(
+									nodeNewOpts.inputs[i][0],
+									nodeNewOpts.inputs[i][1]
+								);
+							}
+						}
+						if (nodeNewOpts.outputs) {
+							newNode.outputs = [];
+							for (var i in nodeNewOpts.outputs) {
+								newNode.addOutput(
+									nodeNewOpts.outputs[i][0],
+									nodeNewOpts.outputs[i][1]
+								);
+							}
+						}
+						if (nodeNewOpts.title) {
+							newNode.title = nodeNewOpts.title;
+						}
+						if (nodeNewOpts.json) {
+							newNode.configure(nodeNewOpts.json);
+						}
 
+					}
+					
+					// add the node
+					that.graph.add(newNode);
+					newNode.pos = [	opts.position[0]+opts.posAdd[0]+(opts.posSizeFix[0]?opts.posSizeFix[0]*newNode.size[0]:0)
+								   	,opts.position[1]+opts.posAdd[1]+(opts.posSizeFix[1]?opts.posSizeFix[1]*newNode.size[1]:0)]; //that.last_click_position; //[e.canvasX+30, e.canvasX+5];*/
+					
+					//that.graph.afterChange();
+					
+					// connect the two!
+					if (isFrom){
+						opts.nodeFrom.connectByType( iSlotConn, newNode, fromSlotType );
+					}else{
+						opts.nodeTo.connectByTypeOutput( iSlotConn, newNode, fromSlotType );
+					}
+					
+					// if connecting in between
+					if (isFrom && isTo){
+						// TODO
+					}
+					
+					return true;
+					
+				}else{
+					console.log("failed creating "+nodeNewType);
+				}
+			}
+		}
+		return false;
+	}
+ 
+    LGraphCanvas.prototype.showConnectionMenu = function(optPass) { // addNodeMenu for connection
+        var optPass = optPass || {};
+        var opts = Object.assign({   nodeFrom: null  // input
+                                    ,slotFrom: null // input
+                                    ,nodeTo: null   // output
+                                    ,slotTo: null   // output
+                                    ,e: null
+                                }
+                                ,optPass
+                            );
+        var that = this;
+        
+        var isFrom = opts.nodeFrom && opts.slotFrom;
+        var isTo = !isFrom && opts.nodeTo && opts.slotTo;
+        
+        if (!isFrom && !isTo){
+            console.warn("No data passed to showConnectionMenu");
+            return false;
+        }
+        
+        var nodeX = isFrom ? opts.nodeFrom : opts.nodeTo;
+        var slotX = isFrom ? opts.slotFrom : opts.slotTo;
+        
+        var iSlotConn = false;
+        switch (typeof slotX){
+            case "string":
+                iSlotConn = isFrom ? nodeX.findOutputSlot(slotX,false) : nodeX.findInputSlot(slotX,false);
+                slotX = isFrom ? nodeX.outputs[slotX] : nodeX.inputs[slotX];
+            break;
+            case "object":
+                // ok slotX
+                iSlotConn = isFrom ? nodeX.findOutputSlot(slotX.name) : nodeX.findInputSlot(slotX.name);
+            break;
+            case "number":
+                iSlotConn = slotX;
+                slotX = isFrom ? nodeX.outputs[slotX] : nodeX.inputs[slotX];
+            break;
+            default:
+                // bad ?
+                //iSlotConn = 0;
+                console.warn("Cant get slot information "+slotX);
+                return false;
+        }
+            
+		var options = ["Add Node",null];
+		
+		if (that.allow_searchbox){
+			options.push("Search");
+			options.push(null);
+		}
+		
+		// get defaults nodes for this slottype
+		var fromSlotType = slotX.type==LiteGraph.EVENT?"_event_":slotX.type;
+		var slotTypesDefault = isFrom ? LiteGraph.slot_types_default_out : LiteGraph.slot_types_default_in;
+		if(slotTypesDefault && slotTypesDefault[fromSlotType]){
+			if(typeof slotTypesDefault[fromSlotType] == "object" || typeof slotTypesDefault[fromSlotType] == "array"){
+				for(var typeX in slotTypesDefault[fromSlotType]){
+					options.push(slotTypesDefault[fromSlotType][typeX]);
+				}
+			}else{
+				options.push(slotTypesDefault[fromSlotType]);
+			}
+		}
+		
+		// build menu
+        var menu = new LiteGraph.ContextMenu(options, {
+            event: opts.e,
+			title: (slotX && slotX.name!="" ? (slotX.name + (fromSlotType?" | ":"")) : "")+(slotX && fromSlotType ? fromSlotType : ""),
+            callback: inner_clicked
+        });
+        
+		// callback
+        function inner_clicked(v,options,e) {
+            //console.log("Process showConnectionMenu selection");
+            switch (v) {
+                case "Add Node":
+                    LGraphCanvas.onMenuAdd(null, null, e, menu, function(node){
+                        if (isFrom){
+                            opts.nodeFrom.connectByType( iSlotConn, node, fromSlotType );
+                        }else{
+                            opts.nodeTo.connectByTypeOutput( iSlotConn, node, fromSlotType );
+                        }
+                    });
+                    break;
+				case "Search":
+					if(isFrom){
+						that.showSearchBox(e,{node_from: opts.nodeFrom, slot_from: slotX, type_filter_in: fromSlotType});
+					}else{
+						that.showSearchBox(e,{node_to: opts.nodeTo, slot_from: slotX, type_filter_out: fromSlotType});
+					}
+					break;
+                default:
+					// check for defaults nodes for this slottype
+					var nodeCreated = that.createDefaultNodeForSlot(Object.assign(opts,{ position: [opts.e.canvasX, opts.e.canvasY]
+																						,nodeType: v
+																					}));
+					if (nodeCreated){
+						// new node created
+						//console.log("node "+v+" created")
+					}else{
+						// failed or v is not in defaults
+					}
+					break;
+            }
+        }   
+        
+        return false;
+    };
+
+    // TODO refactor :: this is used fot title but not for properties!
     LGraphCanvas.onShowPropertyEditor = function(item, options, e, menu, node) {
         var input_html = "";
         var property = item.property || "title";
         var value = node[property];
 
+        // TODO refactor :: use createDialog ?
+        
         var dialog = document.createElement("div");
+        dialog.is_modified = false;
         dialog.className = "graphdialog";
-        dialog.innerHTML = "<span class='name'></span><input autofocus type='text' class='value'/><button>OK</button>";
-		//dialog.innerHTML = "<span class='name'></span><textarea autofocus class='value'></textarea><button>OK</button>";
+        dialog.innerHTML =
+            "<span class='name'></span><input autofocus type='text' class='value'/><button>OK</button>";
+        dialog.close = function() {
+            if (dialog.parentNode) {
+                dialog.parentNode.removeChild(dialog);
+            }
+        };
         var title = dialog.querySelector(".name");
         title.innerText = property;
         var input = dialog.querySelector(".value");
@@ -9835,10 +11128,15 @@ LGraphNode.prototype.executeAction = function(action)
                 this.focus();
             });
             input.addEventListener("keydown", function(e) {
-                if (e.keyCode != 13 && e.target.localName != "textarea") {
+                dialog.is_modified = true;
+                if (e.keyCode == 27) {
+                    //ESC
+                    dialog.close();
+                } else if (e.keyCode == 13) {
+                    inner(); // save
+                } else if (e.keyCode != 13 && e.target.localName != "textarea") {
                     return;
                 }
-                inner();
                 e.preventDefault();
                 e.stopPropagation();
             });
@@ -9867,8 +11165,21 @@ LGraphNode.prototype.executeAction = function(action)
         button.addEventListener("click", inner);
         canvas.parentNode.appendChild(dialog);
 
+        if(input) input.focus();
+        
+        var dialogCloseTimer = null;
+        dialog.addEventListener("mouseleave", function(e) {
+            if(LiteGraph.dialog_close_on_mouse_leave)
+                if (!dialog.is_modified && LiteGraph.dialog_close_on_mouse_leave)
+                    dialogCloseTimer = setTimeout(dialog.close, LiteGraph.dialog_close_on_mouse_leave_delay); //dialog.close();
+        });
+        dialog.addEventListener("mouseenter", function(e) {
+            if(LiteGraph.dialog_close_on_mouse_leave)
+                if(dialogCloseTimer) clearTimeout(dialogCloseTimer);
+        });
+        
         function inner() {
-            setValue(input.value);
+            if(input) setValue(input.value);
         }
 
         function setValue(value) {
@@ -9885,19 +11196,19 @@ LGraphNode.prototype.executeAction = function(action)
         }
     };
 
+    // refactor: there are different dialogs, some uses createDialog some dont
     LGraphCanvas.prototype.prompt = function(title, value, callback, event, multiline) {
         var that = this;
         var input_html = "";
         title = title || "";
 
-        var modified = false;
-
         var dialog = document.createElement("div");
+        dialog.is_modified = false;
         dialog.className = "graphdialog rounded";
-		if(multiline)
+        if(multiline)
 	        dialog.innerHTML = "<span class='name'></span> <textarea autofocus class='value'></textarea><button class='rounded'>OK</button>";
 		else
-	        dialog.innerHTML = "<span class='name'></span> <input autofocus type='text' class='value'/><button class='rounded'>OK</button>";
+        	dialog.innerHTML = "<span class='name'></span> <input autofocus type='text' class='value'/><button class='rounded'>OK</button>";
         dialog.close = function() {
             that.prompt_box = null;
             if (dialog.parentNode) {
@@ -9905,15 +11216,42 @@ LGraphNode.prototype.executeAction = function(action)
             }
         };
 
+        var graphcanvas = LGraphCanvas.active_canvas;
+        var canvas = graphcanvas.canvas;
+        canvas.parentNode.appendChild(dialog);
+        
         if (this.ds.scale > 1) {
             dialog.style.transform = "scale(" + this.ds.scale + ")";
         }
 
-        dialog.addEventListener("mouseleave", function(e) {
-            if (!modified) {
-                dialog.close();
-            }
+        var dialogCloseTimer = null;
+        var prevent_timeout = false;
+        LiteGraph.pointerListenerAdd(dialog,"leave", function(e) {
+            if (prevent_timeout)
+                return;
+            if(LiteGraph.dialog_close_on_mouse_leave)
+                if (!dialog.is_modified && LiteGraph.dialog_close_on_mouse_leave)
+                    dialogCloseTimer = setTimeout(dialog.close, LiteGraph.dialog_close_on_mouse_leave_delay); //dialog.close();
         });
+        LiteGraph.pointerListenerAdd(dialog,"enter", function(e) {
+            if(LiteGraph.dialog_close_on_mouse_leave)
+                if(dialogCloseTimer) clearTimeout(dialogCloseTimer);
+        });
+        var selInDia = dialog.querySelectorAll("select");
+        if (selInDia){
+            // if filtering, check focus changed to comboboxes and prevent closing
+            selInDia.forEach(function(selIn) {
+                selIn.addEventListener("click", function(e) {
+                    prevent_timeout++;
+                });
+                selIn.addEventListener("blur", function(e) {
+                   prevent_timeout = 0;
+                });
+                selIn.addEventListener("change", function(e) {
+                    prevent_timeout = -1;
+                });
+            });
+        }
 
         if (that.prompt_box) {
             that.prompt_box.close();
@@ -9931,7 +11269,7 @@ LGraphNode.prototype.executeAction = function(action)
 
         var input = value_element;
         input.addEventListener("keydown", function(e) {
-            modified = true;
+            dialog.is_modified = true;
             if (e.keyCode == 27) {
                 //ESC
                 dialog.close();
@@ -9956,9 +11294,6 @@ LGraphNode.prototype.executeAction = function(action)
             dialog.close();
         });
 
-        var graphcanvas = LGraphCanvas.active_canvas;
-        var canvas = graphcanvas.canvas;
-
         var rect = canvas.getBoundingClientRect();
         var offsetx = -20;
         var offsety = -20;
@@ -9975,7 +11310,6 @@ LGraphNode.prototype.executeAction = function(action)
             dialog.style.top = canvas.height * 0.5 + offsety + "px";
         }
 
-        canvas.parentNode.appendChild(dialog);
         setTimeout(function() {
             input.focus();
         }, 10);
@@ -9984,7 +11318,24 @@ LGraphNode.prototype.executeAction = function(action)
     };
 
     LGraphCanvas.search_limit = -1;
-    LGraphCanvas.prototype.showSearchBox = function(event) {
+    LGraphCanvas.prototype.showSearchBox = function(event, options) {
+        // proposed defaults
+        def_options = { slot_from: null
+                        ,node_from: null
+                        ,node_to: null
+                        ,do_type_filter: LiteGraph.search_filter_enabled // TODO check for registered_slot_[in/out]_types not empty // this will be checked for functionality enabled : filter on slot type, in and out
+                        ,type_filter_in: false                          // these are default: pass to set initially set values
+                        ,type_filter_out: false
+                        ,show_general_if_none_on_typefilter: true
+                        ,show_general_after_typefiltered: true
+                        ,hide_on_mouse_leave: LiteGraph.search_hide_on_mouse_leave
+                        ,show_all_if_empty: true
+                        ,show_all_on_open: LiteGraph.search_show_all_on_open
+                    };
+        options = Object.assign(def_options, options || {});
+        
+		//console.log(options);
+		
         var that = this;
         var input_html = "";
         var graphcanvas = LGraphCanvas.active_canvas;
@@ -9993,11 +11344,31 @@ LGraphNode.prototype.executeAction = function(action)
 
         var dialog = document.createElement("div");
         dialog.className = "litegraph litesearchbox graphdialog rounded";
-        dialog.innerHTML =
-            "<span class='name'>Search</span> <input autofocus type='text' class='value rounded'/><div class='helper'></div>";
+        dialog.innerHTML = "<span class='name'>Search</span> <input autofocus type='text' class='value rounded'/>";
+        if (options.do_type_filter){
+            dialog.innerHTML += "<select class='slot_in_type_filter'><option value=''></option></select>";
+            dialog.innerHTML += "<select class='slot_out_type_filter'><option value=''></option></select>";
+        }
+        dialog.innerHTML += "<div class='helper'></div>";
+        
+        if( root_document.fullscreenElement )
+	        root_document.fullscreenElement.appendChild(dialog);
+		else
+		{
+		    root_document.body.appendChild(dialog);
+			root_document.body.style.overflow = "hidden";
+		}
+        // dialog element has been appended
+        
+        if (options.do_type_filter){
+            var selIn = dialog.querySelector(".slot_in_type_filter");
+            var selOut = dialog.querySelector(".slot_out_type_filter");
+        }
+        
         dialog.close = function() {
             that.search_box = null;
-            root_document.body.focus();
+			this.blur();
+            canvas.focus();
 			root_document.body.style.overflow = "";
 
             setTimeout(function() {
@@ -10008,25 +11379,50 @@ LGraphNode.prototype.executeAction = function(action)
             }
         };
 
-        var timeout_close = null;
-
         if (this.ds.scale > 1) {
             dialog.style.transform = "scale(" + this.ds.scale + ")";
         }
 
-        dialog.addEventListener("mouseenter", function(e) {
-            if (timeout_close) {
-                clearTimeout(timeout_close);
-                timeout_close = null;
+        // hide on mouse leave
+        if(options.hide_on_mouse_leave){
+            var prevent_timeout = false;
+            var timeout_close = null;
+            LiteGraph.pointerListenerAdd(dialog,"enter", function(e) {
+                if (timeout_close) {
+                    clearTimeout(timeout_close);
+                    timeout_close = null;
+                }
+            });
+            LiteGraph.pointerListenerAdd(dialog,"leave", function(e) {
+                if (prevent_timeout){
+                    return;
+                }
+                timeout_close = setTimeout(function() {
+                    dialog.close();
+                }, 500);
+            });
+            // if filtering, check focus changed to comboboxes and prevent closing
+            if (options.do_type_filter){
+                selIn.addEventListener("click", function(e) {
+                    prevent_timeout++;
+                });
+                selIn.addEventListener("blur", function(e) {
+                   prevent_timeout = 0;
+                });
+                selIn.addEventListener("change", function(e) {
+                    prevent_timeout = -1;
+                });
+                selOut.addEventListener("click", function(e) {
+                    prevent_timeout++;
+                });
+                selOut.addEventListener("blur", function(e) {
+                   prevent_timeout = 0;
+                });
+                selOut.addEventListener("change", function(e) {
+                    prevent_timeout = -1;
+                });
             }
-        });
-
-        dialog.addEventListener("mouseleave", function(e) {
-            //dialog.close();
-            timeout_close = setTimeout(function() {
-                dialog.close();
-            }, 500);
-        });
+        }
 
         if (that.search_box) {
             that.search_box.close();
@@ -10066,7 +11462,7 @@ LGraphNode.prototype.executeAction = function(action)
                     if (timeout) {
                         clearInterval(timeout);
                     }
-                    timeout = setTimeout(refreshHelper, 10);
+                    timeout = setTimeout(refreshHelper, 250);
                     return;
                 }
                 e.preventDefault();
@@ -10075,15 +11471,62 @@ LGraphNode.prototype.executeAction = function(action)
 				return true;
             });
         }
-
-		if( root_document.fullscreenElement )
-	        root_document.fullscreenElement.appendChild(dialog);
-		else
-		{
-		    root_document.body.appendChild(dialog);
-			root_document.body.style.overflow = "hidden";
-		}
-
+        
+        // if should filter on type, load and fill selected and choose elements if passed
+        if (options.do_type_filter){
+            if (selIn){
+                var aSlots = LiteGraph.slot_types_in;
+                var nSlots = aSlots.length; // this for object :: Object.keys(aSlots).length;
+                
+                if (options.type_filter_in == LiteGraph.EVENT || options.type_filter_in == LiteGraph.ACTION)
+                    options.type_filter_in = "_event_";
+                /* this will filter on * .. but better do it manually in case
+                else if(options.type_filter_in === "" || options.type_filter_in === 0)
+                    options.type_filter_in = "*";*/
+                
+                for (var iK=0; iK<nSlots; iK++){
+                    var opt = document.createElement('option');
+                    opt.value = aSlots[iK];
+                    opt.innerHTML = aSlots[iK];
+                    selIn.appendChild(opt);
+                    if(options.type_filter_in !==false && (options.type_filter_in+"").toLowerCase() == (aSlots[iK]+"").toLowerCase()){
+                        //selIn.selectedIndex ..
+                        opt.selected = true;
+						//console.log("comparing IN "+options.type_filter_in+" :: "+aSlots[iK]);
+	                }else{
+						//console.log("comparing OUT "+options.type_filter_in+" :: "+aSlots[iK]);
+					}
+				}
+                selIn.addEventListener("change",function(){
+                    refreshHelper();
+                });
+            }
+            if (selOut){
+                var aSlots = LiteGraph.slot_types_out;
+                var nSlots = aSlots.length; // this for object :: Object.keys(aSlots).length; 
+                
+                if (options.type_filter_out == LiteGraph.EVENT || options.type_filter_out == LiteGraph.ACTION)
+                    options.type_filter_out = "_event_";
+                /* this will filter on * .. but better do it manually in case
+                else if(options.type_filter_out === "" || options.type_filter_out === 0)
+                    options.type_filter_out = "*";*/
+                
+                for (var iK=0; iK<nSlots; iK++){
+                    var opt = document.createElement('option');
+                    opt.value = aSlots[iK];
+                    opt.innerHTML = aSlots[iK];
+                    selOut.appendChild(opt);
+                    if(options.type_filter_out !==false && (options.type_filter_out+"").toLowerCase() == (aSlots[iK]+"").toLowerCase()){
+                        //selOut.selectedIndex ..
+                        opt.selected = true;
+                    }
+                }
+                selOut.addEventListener("change",function(){
+                    refreshHelper();
+                });
+            }
+        }
+        
         //compute best position
         var rect = canvas.getBoundingClientRect();
 
@@ -10115,6 +11558,7 @@ LGraphNode.prototype.executeAction = function(action)
 		*/
 
         input.focus();
+        if (options.show_all_on_open) refreshHelper();
 
         function select(name) {
             if (name) {
@@ -10132,7 +11576,7 @@ LGraphNode.prototype.executeAction = function(action)
                         node.pos = graphcanvas.convertEventToCanvasOffset(
                             event
                         );
-                        graphcanvas.graph.add(node);
+                        graphcanvas.graph.add(node, false);
                     }
 
                     if (extra && extra.data) {
@@ -10166,8 +11610,68 @@ LGraphNode.prototype.executeAction = function(action)
                             node.configure(extra.data.json);
                         }
 
-						graphcanvas.graph.afterChange();
                     }
+
+                    // join node after inserting
+                    if (options.node_from){
+                        var iS = false;
+                        switch (typeof options.slot_from){
+                            case "string":
+                                iS = options.node_from.findOutputSlot(options.slot_from);    
+                            break;
+                            case "object":
+                                if (options.slot_from.name){
+                                    iS = options.node_from.findOutputSlot(options.slot_from.name);
+                                }else{
+                                    iS = -1;
+                                }
+                                if (iS==-1 && typeof options.slot_from.slot_index !== "undefined") iS = options.slot_from.slot_index;
+                            break;
+                            case "number":
+                                iS = options.slot_from;
+                            break;
+                            default:
+                                iS = 0; // try with first if no name set
+                        }
+                        if (typeof options.node_from.outputs[iS] !== undefined){
+                            if (iS!==false && iS>-1){
+                                options.node_from.connectByType( iS, node, options.node_from.outputs[iS].type );
+                            }
+                        }else{
+                            // console.warn("cant find slot " + options.slot_from);
+                        }
+                    }
+                    if (options.node_to){
+                        var iS = false;
+                        switch (typeof options.slot_from){
+                            case "string":
+                                iS = options.node_to.findInputSlot(options.slot_from);    
+                            break;
+                            case "object":
+                                if (options.slot_from.name){
+                                    iS = options.node_to.findInputSlot(options.slot_from.name);
+                                }else{
+                                    iS = -1;
+                                }
+                                if (iS==-1 && typeof options.slot_from.slot_index !== "undefined") iS = options.slot_from.slot_index;
+                            break;
+                            case "number":
+                                iS = options.slot_from;
+                            break;
+                            default:
+                                iS = 0; // try with first if no name set
+                        }
+                        if (typeof options.node_to.inputs[iS] !== undefined){
+                            if (iS!==false && iS>-1){
+                                // try connection
+                                options.node_to.connectByTypeOutput(iS,node,options.node_to.inputs[iS].type);
+                            }
+                        }else{
+                            // console.warn("cant find slot_nodeTO " + options.slot_from);
+                        }
+                    }
+                    
+                    graphcanvas.graph.afterChange();
                 }
             }
 
@@ -10203,7 +11707,7 @@ LGraphNode.prototype.executeAction = function(action)
             var str = input.value;
             first = null;
             helper.innerHTML = "";
-            if (!str) {
+            if (!str && !options.show_all_if_empty) {
                 return;
             }
 
@@ -10219,15 +11723,26 @@ LGraphNode.prototype.executeAction = function(action)
                 str = str.toLowerCase();
 				var filter = graphcanvas.filter || graphcanvas.graph.filter;
 
+                // filter by type preprocess
+                if(options.do_type_filter && that.search_box){
+                    var sIn = that.search_box.querySelector(".slot_in_type_filter");
+                    var sOut = that.search_box.querySelector(".slot_out_type_filter");
+                }else{
+                    var sIn = false;
+                    var sOut = false;
+                }
+                
                 //extras
                 for (var i in LiteGraph.searchbox_extras) {
                     var extra = LiteGraph.searchbox_extras[i];
-                    if (extra.desc.toLowerCase().indexOf(str) === -1) {
+                    if ((!options.show_all_if_empty || str) && extra.desc.toLowerCase().indexOf(str) === -1) {
                         continue;
                     }
 					var ctor = LiteGraph.registered_node_types[ extra.type ];
 					if( ctor && ctor.filter != filter )
 						continue;
+                    if( ! inner_test_filter(extra.type) )
+                        continue;
                     addResult( extra.desc, "searchbox_extra" );
                     if ( LGraphCanvas.search_limit !== -1 && c++ > LGraphCanvas.search_limit ) {
                         break;
@@ -10252,13 +11767,98 @@ LGraphNode.prototype.executeAction = function(action)
 						break;
 					}
 				}
-
-				function inner_test_filter( type )
+                
+                // add general type if filtering
+                if (options.show_general_after_typefiltered
+                    && (sIn.value || sOut.value) 
+                ){
+                    filtered_extra = [];
+                    for (var i in LiteGraph.registered_node_types) {
+						if( inner_test_filter(i, {inTypeOverride: sIn&&sIn.value?"*":false, outTypeOverride: sOut&&sOut.value?"*":false}) )
+							filtered_extra.push(i);
+                    }
+                    for (var i = 0; i < filtered_extra.length; i++) {
+                        addResult(filtered_extra[i], "generic_type");
+                        if ( LGraphCanvas.search_limit !== -1 && c++ > LGraphCanvas.search_limit ) {
+                            break;
+                        }
+                    }
+                }
+                
+                // check il filtering gave no results
+                if ((sIn.value || sOut.value) && 
+                    ( (helper.childNodes.length == 0 && options.show_general_if_none_on_typefilter) )
+                ){
+                    filtered_extra = [];
+                    for (var i in LiteGraph.registered_node_types) {
+						if( inner_test_filter(i, {skipFilter: true}) )
+							filtered_extra.push(i);
+                    }
+                    for (var i = 0; i < filtered_extra.length; i++) {
+                        addResult(filtered_extra[i], "not_in_filter");
+                        if ( LGraphCanvas.search_limit !== -1 && c++ > LGraphCanvas.search_limit ) {
+                            break;
+                        }
+                    }
+                }
+                
+				function inner_test_filter( type, optsIn )
 				{
+                    var optsIn = optsIn || {};
+                    var optsDef = { skipFilter: false
+                                    ,inTypeOverride: false
+                                    ,outTypeOverride: false
+                                  };
+                    var opts = Object.assign(optsDef,optsIn);
 					var ctor = LiteGraph.registered_node_types[ type ];
 					if(filter && ctor.filter != filter )
 						return false;
-					return type.toLowerCase().indexOf(str) !== -1;
+                    if ((!options.show_all_if_empty || str) && type.toLowerCase().indexOf(str) === -1)
+                        return false;
+                    
+                    // filter by slot IN, OUT types
+                    if(options.do_type_filter && !opts.skipFilter){
+                        var sType = type;
+                        
+                        var sV = sIn.value;
+                        if (opts.inTypeOverride!==false) sV = opts.inTypeOverride;
+						//if (sV.toLowerCase() == "_event_") sV = LiteGraph.EVENT; // -1
+                        
+                        if(sIn && sV){
+                            //console.log("will check filter against "+sV);
+                            if (LiteGraph.registered_slot_in_types[sV] && LiteGraph.registered_slot_in_types[sV].nodes){ // type is stored
+                                //console.debug("check "+sType+" in "+LiteGraph.registered_slot_in_types[sV].nodes);
+                                var doesInc = LiteGraph.registered_slot_in_types[sV].nodes.includes(sType);
+                                if (doesInc!==false){
+                                    //console.log(sType+" HAS "+sV);
+                                }else{
+                                    /*console.debug(LiteGraph.registered_slot_in_types[sV]);
+                                    console.log(+" DONT includes "+type);*/
+                                    return false;
+                                }
+                            }
+                        }
+                        
+                        var sV = sOut.value;
+                        if (opts.outTypeOverride!==false) sV = opts.outTypeOverride;
+                        //if (sV.toLowerCase() == "_event_") sV = LiteGraph.EVENT; // -1
+                        
+                        if(sOut && sV){
+                            //console.log("search will check filter against "+sV);
+                            if (LiteGraph.registered_slot_out_types[sV] && LiteGraph.registered_slot_out_types[sV].nodes){ // type is stored
+                                //console.debug("check "+sType+" in "+LiteGraph.registered_slot_out_types[sV].nodes);
+                                var doesInc = LiteGraph.registered_slot_out_types[sV].nodes.includes(sType);
+                                if (doesInc!==false){
+                                    //console.log(sType+" HAS "+sV);
+                                }else{
+                                    /*console.debug(LiteGraph.registered_slot_out_types[sV]);
+                                    console.log(+" DONT includes "+type);*/
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    return true;
 				}
             }
 
@@ -10315,7 +11915,7 @@ LGraphNode.prototype.executeAction = function(action)
                     "</option>";
             }
             input_html += "</select>";
-        } else if (type == "boolean") {
+        } else if (type == "boolean" || type == "toggle") {
             input_html =
                 "<input autofocus type='checkbox' class='value' " +
                 (node.properties[property] ? "checked" : "") +
@@ -10334,22 +11934,25 @@ LGraphNode.prototype.executeAction = function(action)
             options
         );
 
+        var input = false;
         if ((type == "enum" || type == "combo") && info.values) {
-            var input = dialog.querySelector("select");
+            input = dialog.querySelector("select");
             input.addEventListener("change", function(e) {
+                dialog.modified();
                 setValue(e.target.value);
                 //var index = e.target.value;
                 //setValue( e.options[e.selectedIndex].value );
             });
-        } else if (type == "boolean") {
-            var input = dialog.querySelector("input");
+        } else if (type == "boolean" || type == "toggle") {
+            input = dialog.querySelector("input");
             if (input) {
                 input.addEventListener("click", function(e) {
+                    dialog.modified();
                     setValue(!!input.checked);
                 });
             }
         } else {
-            var input = dialog.querySelector("input");
+            input = dialog.querySelector("input");
             if (input) {
                 input.addEventListener("blur", function(e) {
                     this.focus();
@@ -10362,15 +11965,22 @@ LGraphNode.prototype.executeAction = function(action)
 
                 input.value = v;
                 input.addEventListener("keydown", function(e) {
-                    if (e.keyCode != 13) {
+                    if (e.keyCode == 27) {
+                        //ESC
+                        dialog.close();
+                    } else if (e.keyCode == 13) {
+                        // ENTER
+                        inner(); // save
+                    } else if (e.keyCode != 13) {
+                        dialog.modified();
                         return;
                     }
-                    inner();
                     e.preventDefault();
                     e.stopPropagation();
                 });
             }
         }
+        if (input) input.focus();
 
         var button = dialog.querySelector("button");
         button.addEventListener("click", inner);
@@ -10406,12 +12016,15 @@ LGraphNode.prototype.executeAction = function(action)
 		return dialog;
     };
 
+    // TODO refactor, theer are different dialog, some uses createDialog, some dont
     LGraphCanvas.prototype.createDialog = function(html, options) {
-        options = options || {};
+        def_options = { checkForInput: false, closeOnLeave: true, closeOnLeave_checkModified: true };
+        options = Object.assign(def_options, options || {});
 
         var dialog = document.createElement("div");
         dialog.className = "graphdialog";
         dialog.innerHTML = html;
+        dialog.is_modified = false;
 
         var rect = this.canvas.getBoundingClientRect();
         var offsetx = -20;
@@ -10437,12 +12050,66 @@ LGraphNode.prototype.executeAction = function(action)
         dialog.style.top = offsety + "px";
 
         this.canvas.parentNode.appendChild(dialog);
-
+        
+        // acheck for input and use default behaviour: save on enter, close on esc
+        if (options.checkForInput){
+            var aI = [];
+            var focused = false;
+            if (aI = dialog.querySelectorAll("input")){
+                aI.forEach(function(iX) {
+                    iX.addEventListener("keydown",function(e){
+                        dialog.modified();
+                        if (e.keyCode == 27) {
+                            dialog.close();
+                        } else if (e.keyCode != 13) {
+                            return;
+                        }
+                        // set value ?
+                        e.preventDefault();
+                        e.stopPropagation();
+                    });
+                    if (!focused) iX.focus();
+                });
+            }
+        }
+        
+        dialog.modified = function(){
+            dialog.is_modified = true;
+        }
         dialog.close = function() {
-            if (this.parentNode) {
-                this.parentNode.removeChild(this);
+            if (dialog.parentNode) {
+                dialog.parentNode.removeChild(dialog);
             }
         };
+        
+        var dialogCloseTimer = null;
+        var prevent_timeout = false;
+        dialog.addEventListener("mouseleave", function(e) {
+            if (prevent_timeout)
+                return;
+            if(options.closeOnLeave || LiteGraph.dialog_close_on_mouse_leave)
+                if (!dialog.is_modified && LiteGraph.dialog_close_on_mouse_leave)
+                    dialogCloseTimer = setTimeout(dialog.close, LiteGraph.dialog_close_on_mouse_leave_delay); //dialog.close();
+        });
+        dialog.addEventListener("mouseenter", function(e) {
+            if(options.closeOnLeave || LiteGraph.dialog_close_on_mouse_leave)
+                if(dialogCloseTimer) clearTimeout(dialogCloseTimer);
+        });
+        var selInDia = dialog.querySelectorAll("select");
+        if (selInDia){
+            // if filtering, check focus changed to comboboxes and prevent closing
+            selInDia.forEach(function(selIn) {
+                selIn.addEventListener("click", function(e) {
+                    prevent_timeout++;
+                });
+                selIn.addEventListener("blur", function(e) {
+                   prevent_timeout = 0;
+                });
+                selIn.addEventListener("change", function(e) {
+                    prevent_timeout = -1;
+                });
+            });
+        }
 
         return dialog;
     };
@@ -10453,7 +12120,7 @@ LGraphNode.prototype.executeAction = function(action)
 		var ref_window = options.window || window;
 		var root = document.createElement("div");
 		root.className = "litegraph dialog";
-		root.innerHTML = "<div class='dialog-header'><span class='dialog-title'></span></div><div class='dialog-content'></div><div class='dialog-footer'></div>";
+		root.innerHTML = "<div class='dialog-header'><span class='dialog-title'></span></div><div class='dialog-content'></div><div style='display:none;' class='dialog-alt-content'></div><div class='dialog-footer'></div>";
 		root.header = root.querySelector(".dialog-header");
 
 		if(options.width)
@@ -10473,14 +12140,44 @@ LGraphNode.prototype.executeAction = function(action)
 		root.title_element = root.querySelector(".dialog-title");
 		root.title_element.innerText = title;
 		root.content = root.querySelector(".dialog-content");
+        root.alt_content = root.querySelector(".dialog-alt-content");
 		root.footer = root.querySelector(".dialog-footer");
 
 		root.close = function()
 		{
-			if(this.parentNode)
-				this.parentNode.removeChild(this);
+		    if (root.onClose && typeof root.onClose == "function"){
+		        root.onClose();
+		    }
+		    root.parentNode.removeChild(root);
+		    /* XXX CHECK THIS */
+		    if(this.parentNode){
+		    	this.parentNode.removeChild(this);
+		    }
+		    /* XXX this was not working, was fixed with an IF, check this */
 		}
 
+        // function to swap panel content
+        root.toggleAltContent = function(force){
+            if (typeof force != "undefined"){
+                var vTo = force ? "block" : "none";
+                var vAlt = force ? "none" : "block";
+            }else{
+                var vTo = root.alt_content.style.display != "block" ? "block" : "none";
+                var vAlt = root.alt_content.style.display != "block" ? "none" : "block";
+            }
+            root.alt_content.style.display = vTo;
+            root.content.style.display = vAlt;
+        }
+        
+        root.toggleFooterVisibility = function(force){
+            if (typeof force != "undefined"){
+                var vTo = force ? "block" : "none";
+            }else{
+                var vTo = root.footer.style.display != "block" ? "block" : "none";
+            }
+            root.footer.style.display = vTo;
+        }
+        
 		root.clear = function()
 		{
 			this.content.innerHTML = "";
@@ -10536,9 +12233,9 @@ LGraphNode.prototype.executeAction = function(action)
 			elem.options = options;
 			elem.value = value;
 
-			//if( type == "code" )
-			//	elem.addEventListener("click", function(){ inner_showCodePad( node, this.dataset["property"] ); });
-			if (type == "boolean")
+			if( type == "code" )
+				elem.addEventListener("click", function(e){ root.inner_showCodePad( this.dataset["property"] ); });
+			else if (type == "boolean")
 			{
 				elem.classList.add("boolean");
 				if(value)
@@ -10557,7 +12254,7 @@ LGraphNode.prototype.executeAction = function(action)
 			{
 				value_element.setAttribute("contenteditable",true);
 				value_element.addEventListener("keydown", function(e){ 
-					if(e.code == "Enter")
+					if(e.code == "Enter" && (type != "string" || !e.shiftKey)) // allow for multiline
 					{
 						e.preventDefault();
 						this.blur();
@@ -10600,17 +12297,19 @@ LGraphNode.prototype.executeAction = function(action)
 
 			function innerChange(name, value)
 			{
-				console.log("change",name,value);
+				//console.log("change",name,value);
 				//that.dirty_canvas = true;
 				if(options.callback)
-					options.callback(name,value);
+					options.callback(name,value,options);
 				if(callback)
-					callback(name,value);
+					callback(name,value,options);
 			}
 
 			return elem;
 		}
 
+        if (root.onOpen && typeof root.onOpen == "function") root.onOpen();
+        
 		return root;
 	};
 
@@ -10638,19 +12337,124 @@ LGraphNode.prototype.executeAction = function(action)
 		}
 	}
 
-	LGraphCanvas.prototype.showShowNodePanel = function( node )
-	{
-		window.SELECTED_NODE = node;
-		var panel = document.querySelector("#node-panel");
+    LGraphCanvas.prototype.closePanels = function(){
+        var panel = document.querySelector("#node-panel");
 		if(panel)
 			panel.close();
+        var panel = document.querySelector("#option-panel");
+		if(panel)
+			panel.close();
+    }
+    
+    LGraphCanvas.prototype.showShowGraphOptionsPanel = function(refOpts, obEv, refMenu, refMenu2){
+        if(this.constructor && this.constructor.name == "HTMLDivElement"){
+            // assume coming from the menu event click
+            if (!obEv || !obEv.event || !obEv.event.target || !obEv.event.target.lgraphcanvas){
+                console.warn("Canvas not found"); // need a ref to canvas obj
+                /*console.debug(event);
+                console.debug(event.target);*/
+                return;
+            }
+            var graphcanvas = obEv.event.target.lgraphcanvas;
+        }else{
+            // assume called internally
+            var graphcanvas = this;
+        }
+        graphcanvas.closePanels();
+        var ref_window = graphcanvas.getCanvasWindow();
+        panel = graphcanvas.createPanel("Options",{
+                                            closable: true
+                                            ,window: ref_window
+                                            ,onOpen: function(){
+                                                graphcanvas.OPTIONPANEL_IS_OPEN = true;
+                                            }
+                                            ,onClose: function(){
+                                                graphcanvas.OPTIONPANEL_IS_OPEN = false;
+                                                graphcanvas.options_panel = null;
+                                            }
+                                        });
+        graphcanvas.options_panel = panel;
+        panel.id = "option-panel";
+		panel.classList.add("settings");
+        
+        function inner_refresh(){
+            
+            panel.content.innerHTML = ""; //clear
+
+            var fUpdate = function(name, value, options){
+                switch(name){
+                    /*case "Render mode":
+                        // Case "".. 
+                        if (options.values && options.key){
+                            var kV = Object.values(options.values).indexOf(value);
+                            if (kV>=0 && options.values[kV]){
+                                console.debug("update graph options: "+options.key+": "+kV);
+                                graphcanvas[options.key] = kV;
+                                //console.debug(graphcanvas);
+                                break;
+                            }
+                        }
+                        console.warn("unexpected options");
+                        console.debug(options);
+                        break;*/
+                    default:
+                        //console.debug("want to update graph options: "+name+": "+value);
+                        if (options && options.key){
+                            name = options.key;
+                        }
+                        if (options.values){
+                            value = Object.values(options.values).indexOf(value);
+                        }
+                        //console.debug("update graph option: "+name+": "+value);
+                        graphcanvas[name] = value;
+                        break;
+                }
+            };
+            
+            // panel.addWidget( "string", "Graph name", "", {}, fUpdate); // implement
+            
+            var aProps = LiteGraph.availableCanvasOptions;
+            aProps.sort();
+            for(pI in aProps){
+                var pX = aProps[pI];
+                panel.addWidget( "boolean", pX, graphcanvas[pX], {key: pX, on: "True", off: "False"}, fUpdate);
+            }
+            
+            var aLinks = [ graphcanvas.links_render_mode ];
+            panel.addWidget( "combo", "Render mode", LiteGraph.LINK_RENDER_MODES[graphcanvas.links_render_mode], {key: "links_render_mode", values: LiteGraph.LINK_RENDER_MODES}, fUpdate);
+            
+            panel.addSeparator();
+            
+            panel.footer.innerHTML = ""; // clear
+
+		}
+        inner_refresh();
+
+		graphcanvas.canvas.parentNode.appendChild( panel );
+    }
+    
+    LGraphCanvas.prototype.showShowNodePanel = function( node )
+	{
+		this.SELECTED_NODE = node;
+		this.closePanels();
 		var ref_window = this.getCanvasWindow();
-		panel = this.createPanel(node.title || "",{closable: true, window: ref_window });
+        var that = this;
+		var graphcanvas = this;
+		panel = this.createPanel(node.title || "",{
+                                                    closable: true
+                                                    ,window: ref_window
+                                                    ,onOpen: function(){
+                                                        graphcanvas.NODEPANEL_IS_OPEN = true;
+                                                    }
+                                                    ,onClose: function(){
+                                                        graphcanvas.NODEPANEL_IS_OPEN = false;
+                                                        graphcanvas.node_panel = null;
+                                                    }
+                                                });
+        graphcanvas.node_panel = panel;
 		panel.id = "node-panel";
 		panel.node = node;
 		panel.classList.add("settings");
-		var that = this;
-		var graphcanvas = this;
 
 		function inner_refresh()
 		{
@@ -10659,22 +12463,58 @@ LGraphNode.prototype.executeAction = function(action)
 
 			panel.addHTML("<h3>Properties</h3>");
 
-			for(var i in node.properties)
+            var fUpdate = function(name,value){
+                            graphcanvas.graph.beforeChange(node);
+                            switch(name){
+                                case "Title":
+                                    node.title = value;
+                                    break;
+                                case "Mode":
+                                    var kV = Object.values(LiteGraph.NODE_MODES).indexOf(value);
+                                    if (kV>=0 && LiteGraph.NODE_MODES[kV]){
+                                        node.changeMode(kV);
+                                    }else{
+                                        console.warn("unexpected mode: "+value);
+                                    }
+                                    break;
+                                case "Color":
+                                    if (LGraphCanvas.node_colors[value]){
+                                        node.color = LGraphCanvas.node_colors[value].color;
+                                        node.bgcolor = LGraphCanvas.node_colors[value].bgcolor;
+                                    }else{
+                                        console.warn("unexpected color: "+value);
+                                    }
+                                    break;
+                                default:
+                                    node.setProperty(name,value);
+                                    break;
+                            }
+                            graphcanvas.graph.afterChange();
+                            graphcanvas.dirty_canvas = true;
+                        };
+            
+            panel.addWidget( "string", "Title", node.title, {}, fUpdate);
+            
+            panel.addWidget( "combo", "Mode", LiteGraph.NODE_MODES[node.mode], {values: LiteGraph.NODE_MODES}, fUpdate);
+            
+            var nodeCol = "";
+            if (node.color !== undefined){
+                nodeCol = Object.keys(LGraphCanvas.node_colors).filter(function(nK){ return LGraphCanvas.node_colors[nK].color == node.color; });
+            }
+            
+            panel.addWidget( "combo", "Color", nodeCol, {values: Object.keys(LGraphCanvas.node_colors)}, fUpdate);
+            
+            for(var pName in node.properties)
 			{
-				var value = node.properties[i];
-				var info = node.getPropertyInfo(i);
+				var value = node.properties[pName];
+				var info = node.getPropertyInfo(pName);
 				var type = info.type || "string";
 
 				//in case the user wants control over the side panel widget
-				if( node.onAddPropertyToPanel && node.onAddPropertyToPanel(i,panel) )
+				if( node.onAddPropertyToPanel && node.onAddPropertyToPanel(pName,panel) )
 					continue;
 
-				panel.addWidget( info.widget || info.type, i, value, info, function(name,value){
-					graphcanvas.graph.beforeChange(node);
-					node.setProperty(name,value);
-					graphcanvas.graph.afterChange();
-					graphcanvas.dirty_canvas = true;
-				});
+				panel.addWidget( info.widget || info.type, pName, value, info, fUpdate);
 			}
 
 			panel.addSeparator();
@@ -10682,13 +12522,7 @@ LGraphNode.prototype.executeAction = function(action)
 			if(node.onShowCustomPanelInfo)
 				node.onShowCustomPanelInfo(panel);
 
-			/*
-			panel.addHTML("<h3>Connections</h3>");
-			var connection_containers = panel.addHTML("<div class='inputs connections_side'></div><div class='outputs connections_side'></div>","connections");
-			var inputs = connection_containers.querySelector(".inputs");
-			var outputs = connection_containers.querySelector(".outputs");
-			*/
-
+            panel.footer.innerHTML = ""; // clear
 			panel.addButton("Delete",function(){
 				if(node.block_delete)
 					return;
@@ -10697,14 +12531,13 @@ LGraphNode.prototype.executeAction = function(action)
 			}).classList.add("delete");
 		}
 
-		function inner_showCodePad( node, propname )
+		panel.inner_showCodePad = function( propname )
 		{
-			panel.style.top = "calc( 50% - 250px)";
-			panel.style.left = "calc( 50% - 400px)";
-			panel.style.width = "800px";
-			panel.style.height = "500px";
+            panel.classList.remove("settings");
+            panel.classList.add("centered");
 
-			if(window.CodeFlask) //disabled for now
+            
+			/*if(window.CodeFlask) //disabled for now
 			{
 				panel.content.innerHTML = "<div class='code'></div>";
 				var flask = new CodeFlask( "div.code", { language: 'js' });
@@ -10714,30 +12547,37 @@ LGraphNode.prototype.executeAction = function(action)
 				});
 			}
 			else
-			{
-				panel.content.innerHTML = "<textarea class='code'></textarea>";
-				var textarea = panel.content.querySelector("textarea");
+			{*/
+				panel.alt_content.innerHTML = "<textarea class='code'></textarea>";
+				var textarea = panel.alt_content.querySelector("textarea");
+                var fDoneWith = function(){
+                    panel.toggleAltContent(false); //if(node_prop_div) node_prop_div.style.display = "block"; // panel.close();
+                    panel.toggleFooterVisibility(true);
+                    textarea.parentNode.removeChild(textarea);
+                    panel.classList.add("settings");
+                    panel.classList.remove("centered");
+                    inner_refresh();
+                }
 				textarea.value = node.properties[propname];
 				textarea.addEventListener("keydown", function(e){
-					//console.log(e);
 					if(e.code == "Enter" && e.ctrlKey )
 					{
-						console.log("Assigned");
 						node.setProperty(propname, textarea.value);
+                        fDoneWith();
 					}
 				});
+                panel.toggleAltContent(true);
+                panel.toggleFooterVisibility(false);
 				textarea.style.height = "calc(100% - 40px)";
-			}
-			var assign = that.createButton( "Assign", null, function(){
+			/*}*/
+			var assign = panel.addButton( "Assign", function(){
 				node.setProperty(propname, textarea.value);
+                fDoneWith();
 			});
-			panel.content.appendChild(assign);
-			var button = that.createButton( "Close", null, function(){
-				panel.style.height = "";
-				inner_refresh();
-			});
+			panel.alt_content.appendChild(assign); //panel.content.appendChild(assign);
+			var button = panel.addButton( "Close", fDoneWith);
 			button.style.float = "right";
-			panel.content.appendChild(button);
+			panel.alt_content.appendChild(button); // panel.content.appendChild(button);
 		}
 
 		inner_refresh();
@@ -10877,9 +12717,22 @@ LGraphNode.prototype.executeAction = function(action)
 	}
 
     LGraphCanvas.onMenuNodeCollapse = function(value, options, e, menu, node) {
-		node.graph.beforeChange(node);
-        node.collapse();
-		node.graph.afterChange(node);
+		node.graph.beforeChange(/*?*/);
+		
+		var fApplyMultiNode = function(node){
+			node.collapse();
+		}
+		
+		var graphcanvas = LGraphCanvas.active_canvas;
+		if (!graphcanvas.selected_nodes || Object.keys(graphcanvas.selected_nodes).length <= 1){
+			fApplyMultiNode(node);
+		}else{
+			for (var i in graphcanvas.selected_nodes) {
+				fApplyMultiNode(graphcanvas.selected_nodes[i]);
+			}
+		}
+		
+		node.graph.afterChange(/*?*/);
     };
 
     LGraphCanvas.onMenuNodePin = function(value, options, e, menu, node) {
@@ -10888,7 +12741,7 @@ LGraphNode.prototype.executeAction = function(action)
 
     LGraphCanvas.onMenuNodeMode = function(value, options, e, menu, node) {
         new LiteGraph.ContextMenu(
-            ["Always", "On Event", "On Trigger", "Never"],
+            LiteGraph.NODE_MODES,
             { event: e, callback: inner_clicked, parentMenu: menu, node: node }
         );
 
@@ -10896,21 +12749,24 @@ LGraphNode.prototype.executeAction = function(action)
             if (!node) {
                 return;
             }
-            switch (v) {
-                case "On Event":
-                    node.mode = LiteGraph.ON_EVENT;
-                    break;
-                case "On Trigger":
-                    node.mode = LiteGraph.ON_TRIGGER;
-                    break;
-                case "Never":
-                    node.mode = LiteGraph.NEVER;
-                    break;
-                case "Always":
-                default:
-                    node.mode = LiteGraph.ALWAYS;
-                    break;
-            }
+            var kV = Object.values(LiteGraph.NODE_MODES).indexOf(v);
+            var fApplyMultiNode = function(node){
+				if (kV>=0 && LiteGraph.NODE_MODES[kV])
+					node.changeMode(kV);
+				else{
+					console.warn("unexpected mode: "+v);
+					node.changeMode(LiteGraph.ALWAYS);
+				}
+			}
+			
+			var graphcanvas = LGraphCanvas.active_canvas;
+			if (!graphcanvas.selected_nodes || Object.keys(graphcanvas.selected_nodes).length <= 1){
+				fApplyMultiNode(node);
+			}else{
+				for (var i in graphcanvas.selected_nodes) {
+					fApplyMultiNode(graphcanvas.selected_nodes[i]);
+				}
+			}
         }
 
         return false;
@@ -10956,17 +12812,29 @@ LGraphNode.prototype.executeAction = function(action)
             }
 
             var color = v.value ? LGraphCanvas.node_colors[v.value] : null;
-            if (color) {
-                if (node.constructor === LiteGraph.LGraphGroup) {
-                    node.color = color.groupcolor;
-                } else {
-                    node.color = color.color;
-                    node.bgcolor = color.bgcolor;
-                }
-            } else {
-                delete node.color;
-                delete node.bgcolor;
-            }
+			
+			var fApplyColor = function(node){
+				if (color) {
+					if (node.constructor === LiteGraph.LGraphGroup) {
+						node.color = color.groupcolor;
+					} else {
+						node.color = color.color;
+						node.bgcolor = color.bgcolor;
+					}
+				} else {
+					delete node.color;
+					delete node.bgcolor;
+				}
+			}
+			
+			var graphcanvas = LGraphCanvas.active_canvas;
+			if (!graphcanvas.selected_nodes || Object.keys(graphcanvas.selected_nodes).length <= 1){
+				fApplyColor(node);
+			}else{
+				for (var i in graphcanvas.selected_nodes) {
+					fApplyColor(graphcanvas.selected_nodes[i]);
+				}
+			}
             node.setDirtyCanvas(true, true);
         }
 
@@ -10989,9 +12857,22 @@ LGraphNode.prototype.executeAction = function(action)
             if (!node) {
                 return;
             }
-			node.graph.beforeChange(node);
-            node.shape = v;
-			node.graph.afterChange(node);
+			node.graph.beforeChange(/*?*/); //node
+            
+			var fApplyMultiNode = function(node){
+				node.shape = v;
+			}
+
+			var graphcanvas = LGraphCanvas.active_canvas;
+			if (!graphcanvas.selected_nodes || Object.keys(graphcanvas.selected_nodes).length <= 1){
+				fApplyMultiNode(node);
+			}else{
+				for (var i in graphcanvas.selected_nodes) {
+					fApplyMultiNode(graphcanvas.selected_nodes[i]);
+				}
+			}
+			
+			node.graph.afterChange(/*?*/); //node
             node.setDirtyCanvas(true);
         }
 
@@ -11003,13 +12884,26 @@ LGraphNode.prototype.executeAction = function(action)
             throw "no node passed";
         }
 
-        if (node.removable === false) {
-            return;
-        }
-
 		var graph = node.graph;
 		graph.beforeChange();
-        graph.remove(node);
+        
+		
+		var fApplyMultiNode = function(node){
+			if (node.removable === false) {
+				return;
+			}
+			graph.remove(node);
+		}
+
+		var graphcanvas = LGraphCanvas.active_canvas;
+		if (!graphcanvas.selected_nodes || Object.keys(graphcanvas.selected_nodes).length <= 1){
+			fApplyMultiNode(node);
+		}else{
+			for (var i in graphcanvas.selected_nodes) {
+				fApplyMultiNode(graphcanvas.selected_nodes[i]);
+			}
+		}
+		
 		graph.afterChange();
         node.setDirtyCanvas(true, true);
     };
@@ -11035,17 +12929,37 @@ LGraphNode.prototype.executeAction = function(action)
     };
 
     LGraphCanvas.onMenuNodeClone = function(value, options, e, menu, node) {
-        if (node.clonable == false) {
-            return;
-        }
-        var newnode = node.clone();
-        if (!newnode) {
-            return;
-        }
-        newnode.pos = [node.pos[0] + 5, node.pos[1] + 5];
-
+        
 		node.graph.beforeChange();
-        node.graph.add(newnode);
+        
+		var newSelected = {};
+		
+		var fApplyMultiNode = function(node){
+			if (node.clonable == false) {
+				return;
+			}
+			var newnode = node.clone();
+			if (!newnode) {
+				return;
+			}
+			newnode.pos = [node.pos[0] + 5, node.pos[1] + 5];
+			node.graph.add(newnode);
+			newSelected[newnode.id] = newnode;
+		}
+
+		var graphcanvas = LGraphCanvas.active_canvas;
+		if (!graphcanvas.selected_nodes || Object.keys(graphcanvas.selected_nodes).length <= 1){
+			fApplyMultiNode(node);
+		}else{
+			for (var i in graphcanvas.selected_nodes) {
+				fApplyMultiNode(graphcanvas.selected_nodes[i]);
+			}
+		}
+		
+		if(Object.keys(newSelected).length){
+			graphcanvas.selectNodes(newSelected);
+		}
+		
 		node.graph.afterChange();
 
         node.setDirtyCanvas(true, true);
@@ -11069,6 +12983,7 @@ LGraphNode.prototype.executeAction = function(action)
 
     LGraphCanvas.prototype.getCanvasMenuOptions = function() {
         var options = null;
+		var that = this;
         if (this.getMenuOptions) {
             options = this.getMenuOptions();
         } else {
@@ -11078,9 +12993,13 @@ LGraphNode.prototype.executeAction = function(action)
                     has_submenu: true,
                     callback: LGraphCanvas.onMenuAdd
                 },
-                { content: "Add Group", callback: LGraphCanvas.onGroupAdd }
+                { content: "Add Group", callback: LGraphCanvas.onGroupAdd },
+				//{ content: "Arrange", callback: that.graph.arrange },
                 //{content:"Collapse All", callback: LGraphCanvas.onMenuCollapseAll }
             ];
+            /*if (LiteGraph.showCanvasOptions){
+                options.push({ content: "Options", callback: that.showShowGraphOptionsPanel });
+            }*/
 
             if (this._graph_stack && this._graph_stack.length > 0) {
                 options.push(null, {
@@ -11135,13 +13054,13 @@ LGraphNode.prototype.executeAction = function(action)
                     content: "Mode",
                     has_submenu: true,
                     callback: LGraphCanvas.onMenuNodeMode
-                },
-                {
-                    content: "Resize", callback: function() {
-                        if(node.resizable) 
-                            return LGraphCanvas.onResizeNode;
-                    }
-                },
+                }];
+            if(node.resizable !== false){
+                options.push({
+                    content: "Resize", callback: LGraphCanvas.onMenuResizeNode
+                });
+            }
+            options.push(
                 {
                     content: "Collapse",
                     callback: LGraphCanvas.onMenuNodeCollapse
@@ -11158,7 +13077,7 @@ LGraphNode.prototype.executeAction = function(action)
                     callback: LGraphCanvas.onMenuNodeShapes
                 },
                 null
-            ];
+            );
         }
 
         if (node.onGetInputs) {
@@ -11267,16 +13186,16 @@ LGraphNode.prototype.executeAction = function(action)
                     menu_info.push({ content: "Disconnect Links", slot: slot });
                 }
                 var _slot = slot.input || slot.output;
-                menu_info.push(
-                    _slot.locked
-                        ? "Cannot remove"
-                        : { content: "Remove Slot", slot: slot }
-                );
-                menu_info.push(
-                    _slot.nameLocked
-                        ? "Cannot rename"
-                        : { content: "Rename Slot", slot: slot }
-                );
+                if (_slot.removable){
+                	menu_info.push(
+	                    _slot.locked
+	                        ? "Cannot remove"
+	                        : { content: "Remove Slot", slot: slot }
+	                );
+            	}
+                if (!_slot.nameLocked){
+	                menu_info.push({ content: "Rename Slot", slot: slot });
+                }
     
             }
             options.title =
@@ -11326,19 +13245,23 @@ LGraphNode.prototype.executeAction = function(action)
 
             if (v.content == "Remove Slot") {
                 var info = v.slot;
+                node.graph.beforeChange();
                 if (info.input) {
                     node.removeInput(info.slot);
                 } else if (info.output) {
                     node.removeOutput(info.slot);
                 }
+                node.graph.afterChange();
                 return;
             } else if (v.content == "Disconnect Links") {
                 var info = v.slot;
+                node.graph.beforeChange();
                 if (info.output) {
                     node.disconnectOutput(info.slot);
                 } else if (info.input) {
                     node.disconnectInput(info.slot);
                 }
+                node.graph.afterChange();
                 return;
             } else if (v.content == "Rename Slot") {
                 var info = v.slot;
@@ -11353,17 +13276,32 @@ LGraphNode.prototype.executeAction = function(action)
                 if (input && slot_info) {
                     input.value = slot_info.label || "";
                 }
-                dialog
-                    .querySelector("button")
-                    .addEventListener("click", function(e) {
-                        if (input.value) {
-                            if (slot_info) {
-                                slot_info.label = input.value;
-                            }
-                            that.setDirty(true);
+                var inner = function(){
+                	node.graph.beforeChange();
+                    if (input.value) {
+                        if (slot_info) {
+                            slot_info.label = input.value;
                         }
+                        that.setDirty(true);
+                    }
+                    dialog.close();
+                    node.graph.afterChange();
+                }
+                dialog.querySelector("button").addEventListener("click", inner);
+                input.addEventListener("keydown", function(e) {
+                    dialog.is_modified = true;
+                    if (e.keyCode == 27) {
+                        //ESC
                         dialog.close();
-                    });
+                    } else if (e.keyCode == 13) {
+                        inner(); // save
+                    } else if (e.keyCode != 13 && e.target.localName != "textarea") {
+                        return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+                input.focus();
             }
 
             //if(v.callback)
@@ -11618,7 +13556,7 @@ LGraphNode.prototype.executeAction = function(action)
 			eventClass !== "PointerEvent"
         ) {
             console.error(
-                "Event passed to ContextMenu is not of type MouseEvent or CustomEvent. Ignoring it."
+                "Event passed to ContextMenu is not of type MouseEvent or CustomEvent. Ignoring it. ("+eventClass+")"
             );
             options.event = null;
         }
@@ -11636,9 +13574,9 @@ LGraphNode.prototype.executeAction = function(action)
         }, 100); //delay so the mouse up event is not caught by this element
 
         //this prevents the default context browser menu to open in case this menu was created when pressing right button
-        root.addEventListener(
-            "mouseup",
+		LiteGraph.pointerListenerAdd(root,"up",
             function(e) {
+			  	//console.log("pointerevents: ContextMenu up root prevent");
                 e.preventDefault();
                 return true;
             },
@@ -11657,9 +13595,9 @@ LGraphNode.prototype.executeAction = function(action)
             true
         );
 
-        root.addEventListener(
-            "mousedown",
+        LiteGraph.pointerListenerAdd(root,"down",
             function(e) {
+			  	//console.log("pointerevents: ContextMenu down");
                 if (e.button == 2) {
                     that.close();
                     e.preventDefault();
@@ -11706,8 +13644,9 @@ LGraphNode.prototype.executeAction = function(action)
             num++;
         }
 
-        //close on leave
-        root.addEventListener("mouseleave", function(e) {
+        //close on leave? touch enabled devices won't work TODO use a global device detector and condition on that
+        /*LiteGraph.pointerListenerAdd(root,"leave", function(e) {
+		  	console.log("pointerevents: ContextMenu leave");
             if (that.lock) {
                 return;
             }
@@ -11716,9 +13655,10 @@ LGraphNode.prototype.executeAction = function(action)
             }
             root.closing_timer = setTimeout(that.close.bind(that, e), 500);
             //that.close(e);
-        });
+        });*/
 
-        root.addEventListener("mouseenter", function(e) {
+		LiteGraph.pointerListenerAdd(root,"enter", function(e) {
+		  	//console.log("pointerevents: ContextMenu enter");
             if (root.closing_timer) {
                 clearTimeout(root.closing_timer);
             }
@@ -11819,7 +13759,7 @@ LGraphNode.prototype.executeAction = function(action)
             element.addEventListener("click", inner_onclick);
         }
         if (options.autoopen) {
-            element.addEventListener("mouseenter", inner_over);
+			LiteGraph.pointerListenerAdd(element,"enter",inner_over);
         }
 
         function inner_over(e) {
@@ -11914,7 +13854,7 @@ LGraphNode.prototype.executeAction = function(action)
                 e &&
                 !ContextMenu.isCursorOverElement(e, this.parentMenu.root)
             ) {
-                ContextMenu.trigger(this.parentMenu.root, "mouseleave", e);
+                ContextMenu.trigger(this.parentMenu.root, LiteGraph.pointerevents_method+"leave", e);
             }
         }
         if (this.current_submenu) {
@@ -11924,6 +13864,9 @@ LGraphNode.prototype.executeAction = function(action)
         if (this.root.closing_timer) {
             clearTimeout(this.root.closing_timer);
         }
+        
+        // TODO implement : LiteGraph.contextMenuClosed(); :: keep track of opened / closed / current ContextMenu
+        // on key press, allow filtering/selecting the context menu elements
     };
 
     //this code is used to trigger events easily (used in the context menu mouseleave
@@ -12231,6 +14174,98 @@ LGraphNode.prototype.executeAction = function(action)
             .filter(Boolean); // split & filter [""]
     };
 
+	/* helper for interaction: pointer, touch, mouse Listeners
+	used by LGraphCanvas DragAndScale ContextMenu*/
+	LiteGraph.pointerListenerAdd = function(oDOM, sEvIn, fCall, capture=false) {
+		if (!oDOM || !oDOM.addEventListener || !sEvIn || typeof fCall!=="function"){
+			//console.log("cant pointerListenerAdd "+oDOM+", "+sEvent+", "+fCall);
+			return; // -- break --
+		}
+		
+		var sMethod = LiteGraph.pointerevents_method;
+		var sEvent = sEvIn;
+		
+		// UNDER CONSTRUCTION
+		// convert pointerevents to touch event when not available
+		if (sMethod=="pointer" && !window.PointerEvent){ 
+			console.warn("sMethod=='pointer' && !window.PointerEvent");
+			console.log("Converting pointer["+sEvent+"] : down move up cancel enter TO touchstart touchmove touchend, etc ..");
+			switch(sEvent){
+				case "down":{
+					sMethod = "touch";
+					sEvent = "start";
+					break;
+				}
+				case "move":{
+					sMethod = "touch";
+					//sEvent = "move";
+					break;
+				}
+				case "up":{
+					sMethod = "touch";
+					sEvent = "end";
+					break;
+				}
+				case "cancel":{
+					sMethod = "touch";
+					//sEvent = "cancel";
+					break;
+				}
+				case "enter":{
+					console.log("debug: Should I send a move event?"); // ???
+					break;
+				}
+				// case "over": case "out": not used at now
+				default:{
+					console.warn("PointerEvent not available in this browser ? The event "+sEvent+" would not be called");
+				}
+			}
+		}
+
+		switch(sEvent){
+			//both pointer and move events
+			case "down": case "up": case "move": case "over": case "out": case "enter":
+			{
+				oDOM.addEventListener(sMethod+sEvent, fCall, capture);
+			}
+			// only pointerevents
+			case "leave": case "cancel": case "gotpointercapture": case "lostpointercapture":
+			{
+				if (sMethod!="mouse"){
+					return oDOM.addEventListener(sMethod+sEvent, fCall, capture);
+				}
+			}
+			// not "pointer" || "mouse"
+			default:
+				return oDOM.addEventListener(sEvent, fCall, capture);
+		}
+	}
+	LiteGraph.pointerListenerRemove = function(oDOM, sEvent, fCall, capture=false) {
+		if (!oDOM || !oDOM.removeEventListener || !sEvent || typeof fCall!=="function"){
+			//console.log("cant pointerListenerRemove "+oDOM+", "+sEvent+", "+fCall);
+			return; // -- break --
+		}
+		switch(sEvent){
+			//both pointer and move events
+			case "down": case "up": case "move": case "over": case "out": case "enter":
+			{
+				if (LiteGraph.pointerevents_method=="pointer" || LiteGraph.pointerevents_method=="mouse"){
+					oDOM.removeEventListener(LiteGraph.pointerevents_method+sEvent, fCall, capture);
+				}
+			}
+			// only pointerevents
+			case "leave": case "cancel": case "gotpointercapture": case "lostpointercapture":
+			{
+				if (LiteGraph.pointerevents_method=="pointer"){
+					return oDOM.removeEventListener(LiteGraph.pointerevents_method+sEvent, fCall, capture);
+				}
+			}
+			// not "pointer" || "mouse"
+			default:
+				return oDOM.removeEventListener(sEvent, fCall, capture);
+		}
+	}
+	
     Math.clamp = function(v, a, b) {
         return a > v ? a : b < v ? b : v;
     };
@@ -12248,3 +14283,4 @@ LGraphNode.prototype.executeAction = function(action)
 if (typeof exports != "undefined") {
     exports.LiteGraph = this.LiteGraph;
 }
+

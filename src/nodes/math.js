@@ -2,8 +2,8 @@ export default function mathWidget(LiteGraph) {
 
     //Converter
     function Converter() {
-        this.addInput("in", "");
-	this.addOutput("out");
+        this.addInput("in", 0);
+		this.addOutput("out", 0);
         this.size = [80, 30];
     }
 
@@ -924,10 +924,10 @@ export default function mathWidget(LiteGraph) {
 
 
     function MathBranch() {
-        this.addInput("in", "");
+        this.addInput("in", 0);
         this.addInput("cond", "boolean");
-        this.addOutput("true", "");
-        this.addOutput("false", "");
+        this.addOutput("true", 0);
+        this.addOutput("false", 0);
         this.size = [80, 60];
     }
 
@@ -1325,4 +1325,4 @@ export default function mathWidget(LiteGraph) {
 
     LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
 
-}
+};

@@ -10,7 +10,7 @@ export default function eventWidget(LiteGraph) {
     LogEvent.title = "Log Event";
     LogEvent.desc = "Log event in console";
 
-    LogEvent.prototype.onAction = function(action, param) {
+    LogEvent.prototype.onAction = function(action, param, options) {
         console.log(action, param);
     };
 
@@ -30,57 +30,131 @@ export default function eventWidget(LiteGraph) {
     TriggerEvent.title = "TriggerEvent";
     TriggerEvent.desc = "Triggers event if input evaluates to true";
 
-    TriggerEvent.prototype.onExecute = function(action, param) {
+    TriggerEvent.prototype.onExecute = function( param, options) {
 		var v = this.getInputData(0);
 		var changed = (v != this.prev);
 		if(this.prev === 0)
 			changed = false;
 		var must_resend = (changed && this.properties.only_on_change) || (!changed && !this.properties.only_on_change);
 		if(v && must_resend )
-	        this.triggerSlot(0, param);
+	        this.triggerSlot(0, param, null, options);
 		if(!v && must_resend)
-	        this.triggerSlot(2, param);
+	        this.triggerSlot(2, param, null, options);
 		if(changed)
-	        this.triggerSlot(1, param);
+	        this.triggerSlot(1, param, null, options);
 		this.prev = v;
     };
 
     LiteGraph.registerNodeType("events/trigger", TriggerEvent);
 
-    //Sequencer for events
-    function Sequencer() {
-        this.addInput("", LiteGraph.ACTION);
-        this.addInput("", LiteGraph.ACTION);
-        this.addInput("", LiteGraph.ACTION);
+    //Sequence of events
+    function Sequence() {
+		var that = this;
         this.addInput("", LiteGraph.ACTION);
         this.addInput("", LiteGraph.ACTION);
         this.addInput("", LiteGraph.ACTION);
         this.addOutput("", LiteGraph.EVENT);
         this.addOutput("", LiteGraph.EVENT);
         this.addOutput("", LiteGraph.EVENT);
-        this.addOutput("", LiteGraph.EVENT);
-        this.addOutput("", LiteGraph.EVENT);
-        this.addOutput("", LiteGraph.EVENT);
-        this.size = [120, 30];
+        this.addWidget("button","+",null,function(){
+	        that.addInput("", LiteGraph.ACTION);
+	        that.addOutput("", LiteGraph.EVENT);
+        });
+        this.size = [90, 70];
         this.flags = { horizontal: true, render_box: false };
     }
 
-    Sequencer.title = "Sequencer";
-    Sequencer.desc = "Trigger events when an event arrives";
+    Sequence.title = "Sequence";
+    Sequence.desc = "Triggers a sequence of events when an event arrives";
 
-    Sequencer.prototype.getTitle = function() {
+    Sequence.prototype.getTitle = function() {
         return "";
     };
 
-    Sequencer.prototype.onAction = function(action, param) {
+    Sequence.prototype.onAction = function(action, param, options) {
         if (this.outputs) {
+            options = options || {};
             for (var i = 0; i < this.outputs.length; ++i) {
-                this.triggerSlot(i, param);
+				var output = this.outputs[i];
+				//needs more info about this...
+				if( options.action_call ) // CREATE A NEW ID FOR THE ACTION
+	                options.action_call = options.action_call + "_seq_" + i;
+				else
+					options.action_call = this.id + "_" + (action ? action : "action")+"_seq_"+i+"_"+Math.floor(Math.random()*9999);
+                this.triggerSlot(i, param, null, options);
             }
         }
     };
 
-    LiteGraph.registerNodeType("events/sequencer", Sequencer);
+    LiteGraph.registerNodeType("events/sequence", Sequence);
+
+
+    //Sequencer for events
+    function Stepper() {
+		var that = this;
+		this.properties = { index: 0 };
+        this.addInput("index", "number");
+        this.addInput("step", LiteGraph.ACTION);
+        this.addInput("reset", LiteGraph.ACTION);
+        this.addOutput("index", "number");
+        this.addOutput("", LiteGraph.EVENT);
+        this.addOutput("", LiteGraph.EVENT);
+        this.addOutput("", LiteGraph.EVENT,{removable:true});
+        this.addWidget("button","+",null,function(){
+	        that.addOutput("", LiteGraph.EVENT, {removable:true});
+        });
+        this.size = [120, 120];
+        this.flags = { render_box: false };
+    }
+
+    Stepper.title = "Stepper";
+    Stepper.desc = "Trigger events sequentially when an tick arrives";
+
+	Stepper.prototype.onDrawBackground = function(ctx)
+	{
+        if (this.flags.collapsed) {
+            return;
+        }
+		var index = this.properties.index || 0;
+        ctx.fillStyle = "#AFB";
+		var w = this.size[0];
+        var y = (index + 1)* LiteGraph.NODE_SLOT_HEIGHT + 4;
+        ctx.beginPath();
+        ctx.moveTo(w - 30, y);
+        ctx.lineTo(w - 30, y + LiteGraph.NODE_SLOT_HEIGHT);
+        ctx.lineTo(w - 15, y + LiteGraph.NODE_SLOT_HEIGHT * 0.5);
+        ctx.fill();
+	}
+
+	Stepper.prototype.onExecute = function()
+	{
+		var index = this.getInputData(0);
+		if(index != null)
+		{
+			index = Math.floor(index);
+			index = Math.clamp( index, 0, this.outputs ? (this.outputs.length - 2) : 0 );
+			if( index != this.properties.index )
+			{
+				this.properties.index = index;
+			    this.triggerSlot( index+1 );
+			}
+		}
+
+		this.setOutputData(0, this.properties.index );
+	}
+
+    Stepper.prototype.onAction = function(action, param) {
+		if(action == "reset")
+			this.properties.index = 0;
+		else if(action == "step")
+		{
+            this.triggerSlot(this.properties.index+1, param);
+			var n = this.outputs ? this.outputs.length - 1 : 0;
+			this.properties.index = (this.properties.index + 1) % n;
+        }
+    };
+
+    LiteGraph.registerNodeType("events/stepper", Stepper);
 
     //Filter events
     function FilterEvent() {
@@ -97,7 +171,7 @@ export default function eventWidget(LiteGraph) {
     FilterEvent.title = "Filter Event";
     FilterEvent.desc = "Blocks events that do not match the filter";
 
-    FilterEvent.prototype.onAction = function(action, param) {
+    FilterEvent.prototype.onAction = function(action, param, options) {
         if (param == null) {
             return;
         }
@@ -120,7 +194,7 @@ export default function eventWidget(LiteGraph) {
             }
         }
 
-        this.triggerSlot(0, param);
+        this.triggerSlot(0, param, null, options);
     };
 
     LiteGraph.registerNodeType("events/filter", FilterEvent);
@@ -142,8 +216,9 @@ export default function eventWidget(LiteGraph) {
 		this._value = this.getInputData(1);
 	}
 
-    EventBranch.prototype.onAction = function(action, param) {
-		this.triggerSlot(this._value ? 0 : 1);
+    EventBranch.prototype.onAction = function(action, param, options) {
+        this._value = this.getInputData(1);
+		this.triggerSlot(this._value ? 0 : 1, param, null, options);
 	}
 
     LiteGraph.registerNodeType("events/branch", EventBranch);
@@ -155,6 +230,8 @@ export default function eventWidget(LiteGraph) {
         this.addInput("reset", LiteGraph.ACTION);
         this.addOutput("change", LiteGraph.EVENT);
         this.addOutput("num", "number");
+        this.addProperty("doCountExecution", false, "boolean", {name: "Count Executions"});
+        this.addWidget("toggle","Count Exec.",this.properties.doCountExecution,"doCountExecution");
         this.num = 0;
     }
 
@@ -168,7 +245,7 @@ export default function eventWidget(LiteGraph) {
         return this.title;
     };
 
-    EventCounter.prototype.onAction = function(action, param) {
+    EventCounter.prototype.onAction = function(action, param, options) {
         var v = this.num;
         if (action == "inc") {
             this.num += 1;
@@ -193,6 +270,9 @@ export default function eventWidget(LiteGraph) {
     };
 
     EventCounter.prototype.onExecute = function() {
+        if(this.properties.doCountExecution){
+            this.num += 1;
+        }
         this.setOutputData(1, this.num);
     };
 
@@ -211,16 +291,16 @@ export default function eventWidget(LiteGraph) {
     DelayEvent.title = "Delay";
     DelayEvent.desc = "Delays one event";
 
-    DelayEvent.prototype.onAction = function(action, param) {
+    DelayEvent.prototype.onAction = function(action, param, options) {
         var time = this.properties.time_in_ms;
         if (time <= 0) {
-            this.trigger(null, param);
+            this.trigger(null, param, options);
         } else {
             this._pending.push([time, param]);
         }
     };
 
-    DelayEvent.prototype.onExecute = function() {
+    DelayEvent.prototype.onExecute = function(param, options) {
         var dt = this.graph.elapsed_time * 1000; //in ms
 
         if (this.isInputConnected(1)) {
@@ -228,9 +308,9 @@ export default function eventWidget(LiteGraph) {
         }
 
         for (var i = 0; i < this._pending.length; ++i) {
-            var action = this._pending[i];
-            action[0] -= dt;
-            if (action[0] > 0) {
+            var actionPass = this._pending[i];
+            actionPass[0] -= dt;
+            if (actionPass[0] > 0) {
                 continue;
             }
 
@@ -239,7 +319,7 @@ export default function eventWidget(LiteGraph) {
             --i;
 
             //trigger
-            this.trigger(null, action[1]);
+            this.trigger(null, actionPass[1], options);
         }
     };
 
@@ -319,10 +399,49 @@ export default function eventWidget(LiteGraph) {
 
     LiteGraph.registerNodeType("events/timer", TimerEvent);
 
+
+
+    function SemaphoreEvent() {
+        this.addInput("go", LiteGraph.ACTION );
+        this.addInput("green", LiteGraph.ACTION );
+        this.addInput("red", LiteGraph.ACTION );
+        this.addOutput("continue", LiteGraph.EVENT );
+        this.addOutput("blocked", LiteGraph.EVENT );
+        this.addOutput("is_green", "boolean" );
+		this._ready = false;
+		this.properties = {};
+		var that = this;
+		this.addWidget("button","reset","",function(){
+			that._ready = false;
+		});
+    }
+
+    SemaphoreEvent.title = "Semaphore Event";
+    SemaphoreEvent.desc = "Until both events are not triggered, it doesnt continue.";
+
+	SemaphoreEvent.prototype.onExecute = function()
+	{
+		this.setOutputData(1,this._ready);
+		this.boxcolor = this._ready ? "#9F9" : "#FA5";
+	}
+
+    SemaphoreEvent.prototype.onAction = function(action, param) {
+		if( action == "go" )
+			this.triggerSlot( this._ready ? 0 : 1 );
+		else if( action == "green" )
+			this._ready = true;
+		else if( action == "red" )
+			this._ready = false;
+    };
+
+    LiteGraph.registerNodeType("events/semaphore", SemaphoreEvent);
+
+
+
     function DataStore() {
-        this.addInput("data", "");
+        this.addInput("data", 0);
         this.addInput("assign", LiteGraph.ACTION);
-        this.addOutput("data", "");
+        this.addOutput("data", 0);
 		this._last_value = null;
 		this.properties = { data: null, serialize: true };
 		var that = this;
@@ -340,7 +459,7 @@ export default function eventWidget(LiteGraph) {
 		this.setOutputData(0, this.properties.data );
 	}
 
-    DataStore.prototype.onAction = function(action, param) {
+    DataStore.prototype.onAction = function(action, param, options) {
 		this.properties.data = this._last_value;
     };
 

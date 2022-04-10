@@ -16,7 +16,7 @@ export default function stringWidget(LiteGraph) {
         return String(a);
     }
 
-    LiteGraph.wrapFunctionAsNode("string/toString", toString, [""], "String");
+    LiteGraph.wrapFunctionAsNode("string/toString", toString, [""], "string");
 
     function compare(a, b) {
         return a == b;
@@ -84,8 +84,10 @@ export default function stringWidget(LiteGraph) {
 		else if( str.constructor === Array )
 		{
 			var r = [];
-			for(var i = 0; i < str.length; ++i)
-				r[i] = str[i].split(separator || " ");
+			for(var i = 0; i < str.length; ++i){
+                if (typeof str[i] == "string")
+				    r[i] = str[i].split(separator || " ");
+            }
 			return r;
 		}
         return null;
