@@ -5408,6 +5408,7 @@ LGraphNode.prototype.executeAction = function(action)
 		this.onConnectingChange = null; //called before any link changes
 		this.onBeforeChange = null; //called before modifying the graph
 		this.onAfterChange = null; //called after modifying the graph
+        this.onNodeTitleChange = null; //called after modifying node title
 
         this.connections_width = 3;
         this.round_radius = 8;
@@ -11180,6 +11181,9 @@ LGraphNode.prototype.executeAction = function(action)
         
         function inner() {
             if(input) setValue(input.value);
+            if (graphcanvas.onNodeTitleChange) {
+                graphcanvas.onNodeTitleChange(node, input.value);
+            }
         }
 
         function setValue(value) {
