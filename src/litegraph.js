@@ -5932,8 +5932,8 @@ LGraphNode.prototype.executeAction = function(action)
         LGraphCanvas.active_canvas = this;
         var that = this;
 
-		var x = e.clientX;
-		var y = e.clientY;
+		var x = e.clientX_rel;
+		var y = e.clientY_rel;
 		//console.log(y,this.viewport);
 		//console.log("pointerevents: processMouseDown pointerId:"+e.pointerId+" which:"+e.which+" isPrimary:"+e.isPrimary+" :: x y "+x+" "+y);
 
@@ -5958,8 +5958,8 @@ LGraphNode.prototype.executeAction = function(action)
         var now = LiteGraph.getTime();
 		var is_primary = (e.isPrimary === undefined || !e.isPrimary);
         var is_double_click = (now - this.last_mouseclick < 300) && is_primary;
-		this.mouse[0] = e.clientX;
-		this.mouse[1] = e.clientY;
+		this.mouse[0] = e.clientX_rel;
+		this.mouse[1] = e.clientY_rel;
         this.graph_mouse[0] = e.canvasX;
         this.graph_mouse[1] = e.canvasY;
 		this.last_click_position = [this.mouse[0],this.mouse[1]];
@@ -6370,8 +6370,8 @@ LGraphNode.prototype.executeAction = function(action)
         //if(this.node_selected != prev_selected)
         //	this.onNodeSelectionChange(this.node_selected);
 
-        this.last_mouse[0] = e.clientX;
-        this.last_mouse[1] = e.clientY;
+        this.last_mouse[0] = e.clientX_rel;
+        this.last_mouse[1] = e.clientY_rel;
         this.last_mouseclick = LiteGraph.getTime();
         this.last_mouse_dragging = true;
 
@@ -6419,7 +6419,7 @@ LGraphNode.prototype.executeAction = function(action)
 
         LGraphCanvas.active_canvas = this;
         this.adjustMouseEvent(e);
-        var mouse = [e.clientX, e.clientY];
+        var mouse = [e.clientX_rel, e.clientY_rel];
 		this.mouse[0] = mouse[0];
 		this.mouse[1] = mouse[1];
         var delta = [
@@ -6979,8 +6979,8 @@ LGraphNode.prototype.executeAction = function(action)
 
         this.adjustMouseEvent(e);
 
-		var x = e.clientX;
-		var y = e.clientY;
+		var x = e.clientX_rel;
+		var y = e.clientY_rel;
 		var is_inside = !this.viewport || ( this.viewport && x >= this.viewport[0] && x < (this.viewport[0] + this.viewport[2]) && y >= this.viewport[1] && y < (this.viewport[1] + this.viewport[3]) );
 		if(!is_inside)
 			return;
@@ -7334,8 +7334,8 @@ LGraphNode.prototype.executeAction = function(action)
     LGraphCanvas.prototype.processDrop = function(e) {
         e.preventDefault();
         this.adjustMouseEvent(e);
-		var x = e.clientX;
-		var y = e.clientY;
+		var x = e.clientX_rel;
+		var y = e.clientY_rel;
 		var is_inside = !this.viewport || ( this.viewport && x >= this.viewport[0] && x < (this.viewport[0] + this.viewport[2]) && y >= this.viewport[1] && y < (this.viewport[1] + this.viewport[3]) );
 		if(!is_inside){
 			return;
@@ -7653,6 +7653,9 @@ LGraphNode.prototype.executeAction = function(action)
 
         e.canvasX = clientX_rel / this.ds.scale - this.ds.offset[0];
         e.canvasY = clientY_rel / this.ds.scale - this.ds.offset[1];
+
+        e.clientX_rel=clientX_rel
+        e.clientY_rel=clientY_rel
         
         //console.log("pointerevents: adjustMouseEvent "+e.clientX+":"+e.clientY+" "+clientX_rel+":"+clientY_rel+" "+e.canvasX+":"+e.canvasY);
     };
