@@ -8328,21 +8328,21 @@ LGraphNode.prototype.executeAction = function(action)
             ctx.start();
         }
 
-		var viewport = this.viewport || [0,0,ctx.canvas.width,ctx.canvas.height];
+        var viewport = this.viewport || [0,0,ctx.canvas.width,ctx.canvas.height];
 
         //clear
         if (this.clear_background) {
             ctx.clearRect( viewport[0], viewport[1], viewport[2], viewport[3] );
         }
 
-		//show subgraph stack header
+        //show subgraph stack header
         if (this._graph_stack && this._graph_stack.length) {
             ctx.save();
             var parent_graph = this._graph_stack[this._graph_stack.length - 1];
             var subgraph_node = this.graph._subgraph_node;
             ctx.strokeStyle = subgraph_node.bgcolor;
             ctx.lineWidth = 10;
-            ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+            ctx.strokeRect(1, 1, viewport[2] - 2, viewport[3] - 2);
             ctx.lineWidth = 1;
             ctx.font = "40px Arial";
             ctx.textAlign = "center";
@@ -8354,7 +8354,7 @@ LGraphNode.prototype.executeAction = function(action)
             }
             ctx.fillText(
                 title + subgraph_node.getTitle(),
-                canvas.width * 0.5,
+                viewport[2] * 0.5,
                 40
             );
             ctx.restore();
@@ -8367,17 +8367,17 @@ LGraphNode.prototype.executeAction = function(action)
 
         //reset in case of error
         if ( !this.viewport )
-		{
-	        ctx.restore();
-		    ctx.setTransform(1, 0, 0, 1, 0, 0);
-		}
+        {
+            ctx.restore();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+        }
         this.visible_links.length = 0;
-
+    
         if (this.graph) {
             //apply transformations
             ctx.save();
             this.ds.toCanvasContext(ctx);
-
+    
             //render BG
             if (
                 this.background_image &&
@@ -8403,7 +8403,7 @@ LGraphNode.prototype.executeAction = function(action)
                         that.draw(true, true);
                     };
                 }
-
+    
                 var pattern = null;
                 if (this._pattern == null && this._bg_img.width > 0) {
                     pattern = ctx.createPattern(this._bg_img, "repeat");
@@ -8422,16 +8422,16 @@ LGraphNode.prototype.executeAction = function(action)
                     );
                     ctx.fillStyle = "transparent";
                 }
-
+    
                 ctx.globalAlpha = 1.0;
                 ctx.imageSmoothingEnabled = ctx.imageSmoothingEnabled = true; //= ctx.mozImageSmoothingEnabled
             }
-
+    
             //groups
             if (this.graph._groups.length && !this.live_mode) {
                 this.drawGroups(canvas, ctx);
             }
-
+    
             if (this.onDrawBackground) {
                 this.onDrawBackground(ctx, this.visible_area);
             }
@@ -8442,17 +8442,17 @@ LGraphNode.prototype.executeAction = function(action)
                 );
                 this.onBackgroundRender = null;
             }
-
+    
             //DEBUG: show clipping area
             //ctx.fillStyle = "red";
             //ctx.fillRect( this.visible_area[0] + 10, this.visible_area[1] + 10, this.visible_area[2] - 20, this.visible_area[3] - 20);
-
+    
             //bg
             if (this.render_canvas_border) {
                 ctx.strokeStyle = "#235";
-                ctx.strokeRect(0, 0, canvas.width, canvas.height);
+                ctx.strokeRect(0, 0, viewport[2], viewport[3]);
             }
-
+    
             if (this.render_connections_shadows) {
                 ctx.shadowColor = "#000";
                 ctx.shadowOffsetX = 0;
@@ -8461,22 +8461,22 @@ LGraphNode.prototype.executeAction = function(action)
             } else {
                 ctx.shadowColor = "rgba(0,0,0,0)";
             }
-
+    
             //draw connections
             if (!this.live_mode) {
                 this.drawConnections(ctx);
             }
-
+    
             ctx.shadowColor = "rgba(0,0,0,0)";
-
+    
             //restore state
             ctx.restore();
         }
-
+    
         if (ctx.finish) {
             ctx.finish();
         }
-
+    
         this.dirty_bgcanvas = false;
         this.dirty_canvas = true; //to force to repaint the front canvas with the bgcanvas
     };
