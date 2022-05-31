@@ -5715,7 +5715,7 @@ LGraphNode.prototype.executeAction = function(action)
 		LiteGraph.pointerListenerAdd(canvas,"down", this._mousedown_callback, true); //down do not need to store the binded
         canvas.addEventListener("mousewheel", this._mousewheel_callback, false);
 
-        LiteGraph.pointerListenerAdd(canvas,"up", this._mouseup_callback, true); // CHECK: ??? binded or not
+        // LiteGraph.pointerListenerAdd(canvas,"up", this._mouseup_callback, true); // do not bind here. It cause DnD error from another Event.
 		LiteGraph.pointerListenerAdd(canvas,"move", this._mousemove_callback);
         
         canvas.addEventListener("contextmenu", this._doNothing);
