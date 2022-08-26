@@ -7120,6 +7120,14 @@ LGraphNode.prototype.executeAction = function(action)
      * @method processKey
      **/
     LGraphCanvas.prototype.processKey = function(e) {
+        var x = this.last_mouse[0];
+		var y = this.last_mouse[1];
+		this.ds.viewport = this.viewport;
+		var is_inside = !this.viewport || ( this.viewport && x >= this.viewport[0] && x < (this.viewport[0] + this.viewport[2]) && y >= this.viewport[1] && y < (this.viewport[1] + this.viewport[3]) );
+
+        if (!is_inside) {
+            return;
+        }
         if (!this.graph) {
             return;
         }
