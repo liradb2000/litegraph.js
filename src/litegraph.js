@@ -5926,19 +5926,21 @@ LGraphNode.prototype.executeAction = function(action)
         }
 
         this.adjustMouseEvent(e);
+        var x = e.clientX_rel;
+		var y = e.clientY_rel;
+        this.ds.viewport = this.viewport;
+		var is_inside = !this.viewport || ( this.viewport && x >= this.viewport[0] && x < (this.viewport[0] + this.viewport[2]) && y >= this.viewport[1] && y < (this.viewport[1] + this.viewport[3]) );
+        if(!is_inside){
+			return;
+		}
 
         var ref_window = this.getCanvasWindow();
         var document = ref_window.document;
         LGraphCanvas.active_canvas = this;
         var that = this;
 
-		var x = e.clientX_rel;
-		var y = e.clientY_rel;
 		//console.log(y,this.viewport);
 		//console.log("pointerevents: processMouseDown pointerId:"+e.pointerId+" which:"+e.which+" isPrimary:"+e.isPrimary+" :: x y "+x+" "+y);
-
-		this.ds.viewport = this.viewport;
-		var is_inside = !this.viewport || ( this.viewport && x >= this.viewport[0] && x < (this.viewport[0] + this.viewport[2]) && y >= this.viewport[1] && y < (this.viewport[1] + this.viewport[3]) );
 
         //move mouse move event to the window in case it drags outside of the canvas
 		if(!this.options.skip_events)
@@ -5948,9 +5950,6 @@ LGraphNode.prototype.executeAction = function(action)
 			LiteGraph.pointerListenerAdd(ref_window.document,"up", this._mouseup_callback,true);
 		}
 
-		if(!is_inside){
-			return;
-		}
 
         var node = this.graph.getNodeOnPos( e.canvasX, e.canvasY, this.visible_nodes, 5 );
         var skip_dragging = false;
