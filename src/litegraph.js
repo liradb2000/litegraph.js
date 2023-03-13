@@ -5421,7 +5421,7 @@ LGraphNode.prototype.executeAction = function(action)
         this.visible_links = [];
 
 		this.viewport = options.viewport || null; //to constraint render area to a portion of the canvas
-
+        this.device_pixel_ratio = window.devicePixelRatio || 1;
         //link canvas and graph
         if (graph) {
             graph.attachCanvas(this);
@@ -7640,16 +7640,16 @@ LGraphNode.prototype.executeAction = function(action)
      * @method adjustMouseEvent
      **/
     LGraphCanvas.prototype.adjustMouseEvent = function(e) {
-	var clientX_rel = 0;
+	    var clientX_rel = 0;
         var clientY_rel = 0;
-	    
+        
     	if (this.canvas) {
             var b = this.canvas.getBoundingClientRect();
-            clientX_rel = e.clientX - b.left;
-            clientY_rel = e.clientY - b.top;
+            clientX_rel = (e.clientX - b.left) * this.device_pixel_ratio;
+            clientY_rel = (e.clientY - b.top) * this.device_pixel_ratio;
         } else {
-        	clientX_rel = e.clientX;
-        	clientY_rel = e.clientY;
+        	clientX_rel = e.clientX * this.device_pixel_ratio;
+        	clientY_rel = e.clientY * this.device_pixel_ratio;
         }
     	
         // e.deltaX = clientX_rel - this.last_mouse_position[0];
@@ -7717,8 +7717,8 @@ LGraphNode.prototype.executeAction = function(action)
     LGraphCanvas.prototype.convertEventToCanvasOffset = function(e) {
         var rect = this.canvas.getBoundingClientRect();
         return this.convertCanvasToOffset([
-            e.clientX - rect.left,
-            e.clientY - rect.top
+            (e.clientX - rect.left) * this.device_pixel_ratio,
+            (e.clientY - rect.top) * this.device_pixel_ratio
         ]);
     };
 
