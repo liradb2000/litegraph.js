@@ -3742,7 +3742,7 @@
             size[0] = Math.max(size[0], LiteGraph.NODE_WIDTH * 1.5);
         }
 
-        size[1] = (this.constructor.slot_start_y || 0) + rows * LiteGraph.NODE_SLOT_HEIGHT;
+        size[1] = (this.constructor.slot_start_y || this.slot_start_y || 0) + rows * LiteGraph.NODE_SLOT_HEIGHT;
 
         var widgets_height = 0;
         if (this.widgets && this.widgets.length) {
@@ -4366,8 +4366,8 @@
         var input = target_node.inputs[target_slot];
         var link_info = null;
         var output = this.outputs[slot];
-        
-        if (!this.outputs[slot]){
+
+        if (!this.outputs[slot] || input.hidden || output.hidden){
             /*console.debug("Invalid slot passed: "+slot);
             console.debug(this.outputs);*/
             return null;
@@ -4828,7 +4828,7 @@
         out[1] =
             this.pos[1] +
             (slot_number + 0.7) * LiteGraph.NODE_SLOT_HEIGHT +
-            (this.constructor.slot_start_y || 0);
+            (this.constructor.slot_start_y || this.slot_start_y || 0);
         return out;
     };
 
@@ -6047,6 +6047,9 @@ LGraphNode.prototype.executeAction = function(action)
                         if (node.outputs) {
                             for ( var i = 0, l = node.outputs.length; i < l; ++i ) {
                                 var output = node.outputs[i];
+                                if(output.hidden){
+                                    continue;
+                                }
                                 var link_pos = node.getConnectionPos(false, i);
                                 if (
                                     isInsideRectangle(
@@ -6090,6 +6093,9 @@ LGraphNode.prototype.executeAction = function(action)
                         if (node.inputs) {
                             for ( var i = 0, l = node.inputs.length; i < l; ++i ) {
                                 var input = node.inputs[i];
+                                if(input.hidden){
+                                    continue;
+                                }
                                 var link_pos = node.getConnectionPos(true, i);
                                 if (
                                     isInsideRectangle(
@@ -6536,7 +6542,7 @@ LGraphNode.prototype.executeAction = function(action)
                         } else {
                             //check if I have a slot below de mouse
                             var slot = this.isOverNodeInput( node, e.canvasX, e.canvasY, pos );
-                            if (slot != -1 && node.inputs[slot]) {
+                            if (slot != -1 && node.inputs[slot] && !node.inputs[slot].hidden) {
                                 var slot_type = node.inputs[slot].type;
                                 if ( LiteGraph.isValidConnection( this.connecting_output.type, slot_type ) ) {
                                     this._highlight_input = pos;
@@ -6558,7 +6564,7 @@ LGraphNode.prototype.executeAction = function(action)
                         } else {
                             //check if I have a slot below de mouse
                             var slot = this.isOverNodeOutput( node, e.canvasX, e.canvasY, pos );
-                            if (slot != -1 && node.outputs[slot]) {
+                            if (slot != -1 && node.outputs[slot] && !node.outputs[slot].hidden) {
                                 var slot_type = node.outputs[slot].type;
                                 if ( LiteGraph.isValidConnection( this.connecting_input.type, slot_type ) ) {
                                     this._highlight_output = pos;
@@ -8620,6 +8626,17 @@ LGraphNode.prototype.executeAction = function(action)
                 for (var i = 0; i < node.inputs.length; i++) {
                     var slot = node.inputs[i];
                     
+                    var pos = node.getConnectionPos(true, i, slot_pos);
+                    pos[0] -= node.pos[0];
+                    pos[1] -= node.pos[1];
+                    if (max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
+                        max_y = pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5;
+                    }
+
+                    if(slot.hidden){
+                        continue;
+                    }
+
                     var slot_type = slot.type;
                     var slot_shape = slot.shape;
                     
@@ -8639,12 +8656,6 @@ LGraphNode.prototype.executeAction = function(action)
                               this.default_connection_color_byType[slot_type] ||
                               this.default_connection_color.input_off;
 
-                    var pos = node.getConnectionPos(true, i, slot_pos);
-                    pos[0] -= node.pos[0];
-                    pos[1] -= node.pos[1];
-                    if (max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
-                        max_y = pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5;
-                    }
 
                     ctx.beginPath();
 
@@ -8719,7 +8730,18 @@ LGraphNode.prototype.executeAction = function(action)
             if (node.outputs) {
                 for (var i = 0; i < node.outputs.length; i++) {
                     var slot = node.outputs[i];
-                    
+
+                    var pos = node.getConnectionPos(false, i, slot_pos);
+                    pos[0] -= node.pos[0];
+                    pos[1] -= node.pos[1];
+                    if (max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
+                        max_y = pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5;
+                    }
+
+                    if(slot.hidden){
+                        continue;
+                    }
+
                     var slot_type = slot.type;
                     var slot_shape = slot.shape;
                     
@@ -8728,12 +8750,6 @@ LGraphNode.prototype.executeAction = function(action)
                         ctx.globalAlpha = 0.4 * editor_alpha;
                     }
                     
-                    var pos = node.getConnectionPos(false, i, slot_pos);
-                    pos[0] -= node.pos[0];
-                    pos[1] -= node.pos[1];
-                    if (max_y < pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5) {
-                        max_y = pos[1] + LiteGraph.NODE_SLOT_HEIGHT * 0.5;
-                    }
 
                     ctx.fillStyle =
                         slot.links && slot.links.length
