@@ -2324,7 +2324,7 @@
 
         //decode links info (they are very verbose)
         if (data.links && data.links.constructor === Array) {
-            var links = [];
+            var links = {};
             for (var i = 0; i < data.links.length; ++i) {
                 var link_data = data.links[i];
 				if(!link_data) //weird bug
