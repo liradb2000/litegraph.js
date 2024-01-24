@@ -89,6 +89,63 @@ export default function eventWidget(LiteGraph) {
     LiteGraph.registerNodeType("events/sequence", Sequence);
 
 
+   //Sequence of events
+   function WaitAll() {
+    var that = this;
+    this.addInput("", LiteGraph.ACTION);
+    this.addInput("", LiteGraph.ACTION);
+    this.addOutput("", LiteGraph.EVENT);
+    this.addWidget("button","+",null,function(){
+        that.addInput("", LiteGraph.ACTION);
+        that.size[0] = 90;
+    });
+    this.size = [90, 70];
+    this.ready = [];
+}
+
+WaitAll.title = "WaitAll";
+WaitAll.desc = "Wait until all input events arrive then triggers output";
+
+WaitAll.prototype.getTitle = function() {
+    return "";
+};
+
+WaitAll.prototype.onDrawBackground = function(ctx)
+{
+    if (this.flags.collapsed) {
+        return;
+    }
+    for(var i = 0; i < this.inputs.length; ++i)
+    {
+        var y = i * LiteGraph.NODE_SLOT_HEIGHT + 10;
+        ctx.fillStyle = this.ready[i] ? "#AFB" : "#000";
+        ctx.fillRect(20, y, 10, 10);
+    }
+}
+
+WaitAll.prototype.onAction = function(action, param, options, slot_index) {
+    if(slot_index == null)
+        return;
+
+    //check all
+    this.ready.length = this.outputs.length;
+    this.ready[slot_index] = true;
+    for(var i = 0; i < this.ready.length;++i)
+        if(!this.ready[i])
+            return;
+    //pass
+    this.reset();
+    this.triggerSlot(0);
+};
+
+WaitAll.prototype.reset = function()
+{
+    this.ready.length = 0;
+}
+
+LiteGraph.registerNodeType("events/waitAll", WaitAll);    
+
+
     //Sequencer for events
     function Stepper() {
 		var that = this;
@@ -132,7 +189,7 @@ export default function eventWidget(LiteGraph) {
 		if(index != null)
 		{
 			index = Math.floor(index);
-			index = Math.clamp( index, 0, this.outputs ? (this.outputs.length - 2) : 0 );
+			index = clamp( index, 0, this.outputs ? (this.outputs.length - 2) : 0 );
 			if( index != this.properties.index )
 			{
 				this.properties.index = index;
@@ -436,7 +493,32 @@ export default function eventWidget(LiteGraph) {
 
     LiteGraph.registerNodeType("events/semaphore", SemaphoreEvent);
 
+    function OnceEvent() {
+        this.addInput("in", LiteGraph.ACTION );
+        this.addInput("reset", LiteGraph.ACTION );
+        this.addOutput("out", LiteGraph.EVENT );
+		this._once = false;
+		this.properties = {};
+		var that = this;
+		this.addWidget("button","reset","",function(){
+			that._once = false;
+		});
+    }
 
+    OnceEvent.title = "Once";
+    OnceEvent.desc = "Only passes an event once, then gets locked";
+
+    OnceEvent.prototype.onAction = function(action, param) {
+		if( action == "in" && !this._once )
+		{
+			this._once = true;
+			this.triggerSlot( 0, param );
+		}
+		else if( action == "reset" )
+			this._once = false;
+    };
+
+    LiteGraph.registerNodeType("events/once", OnceEvent);
 
     function DataStore() {
         this.addInput("data", 0);

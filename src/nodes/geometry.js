@@ -362,7 +362,7 @@ export default function geometryWidget(LiteGraph) {
 			return -1;
 		if(l == 1)
 			return 0;
-		//dichotimic search
+		//dichotomic search
 		while (imax >= imin)
 		{
 			imid = ((imax + imin)*0.5)|0;

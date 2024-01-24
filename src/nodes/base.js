@@ -1,5 +1,6 @@
 //basic nodes
 export default function baseWidget(LiteGraph) {
+
     //Constant
     function Time() {
         this.addOutput("in ms", "number");
@@ -95,7 +96,7 @@ export default function baseWidget(LiteGraph) {
         this.subgraph.onAction(action, param);
     };
 
-    Subgraph.prototype.onExecute = async function() {
+    Subgraph.prototype.onExecute = function() {
         this.enabled = this.getInputOrProperty("enabled");
         if (!this.enabled) {
             return;
@@ -111,7 +112,7 @@ export default function baseWidget(LiteGraph) {
         }
 
         //execute
-        await this.subgraph.runStep();
+        this.subgraph.runStep();
 
         //send subgraph global outputs to outputs
         if (this.outputs) {
@@ -262,7 +263,7 @@ export default function baseWidget(LiteGraph) {
     };
 
     Subgraph.prototype.onSubgraphRemovedOutput = function(name) {
-        var slot = this.findInputSlot(name);
+        var slot = this.findOutputSlot(name);
         if (slot == -1) {
             return;
         }
@@ -293,9 +294,92 @@ export default function baseWidget(LiteGraph) {
     };
     //no need to define node.configure, the default method detects node.subgraph and passes the object to node.subgraph.configure()
 
+    Subgraph.prototype.reassignSubgraphUUIDs = function(graph) {
+        const idMap = { nodeIDs: {}, linkIDs: {} }
+
+        for (const node of graph.nodes) {
+            const oldID = node.id
+            const newID = LiteGraph.uuidv4()
+            node.id = newID
+
+            if (idMap.nodeIDs[oldID] || idMap.nodeIDs[newID]) {
+                throw new Error(`New/old node UUID wasn't unique in changed map! ${oldID} ${newID}`)
+            }
+
+            idMap.nodeIDs[oldID] = newID
+            idMap.nodeIDs[newID] = oldID
+        }
+
+        for (const link of graph.links) {
+            const oldID = link[0]
+            const newID = LiteGraph.uuidv4();
+            link[0] = newID
+
+            if (idMap.linkIDs[oldID] || idMap.linkIDs[newID]) {
+                throw new Error(`New/old link UUID wasn't unique in changed map! ${oldID} ${newID}`)
+            }
+
+            idMap.linkIDs[oldID] = newID
+            idMap.linkIDs[newID] = oldID
+
+            const nodeFrom = link[1]
+            const nodeTo = link[3]
+
+            if (!idMap.nodeIDs[nodeFrom]) {
+                throw new Error(`Old node UUID not found in mapping! ${nodeFrom}`)
+            }
+
+            link[1] = idMap.nodeIDs[nodeFrom]
+
+            if (!idMap.nodeIDs[nodeTo]) {
+                throw new Error(`Old node UUID not found in mapping! ${nodeTo}`)
+            }
+
+            link[3] = idMap.nodeIDs[nodeTo]
+        }
+
+        // Reconnect links
+        for (const node of graph.nodes) {
+            if (node.inputs) {
+                for (const input of node.inputs) {
+                    if (input.link) {
+                        input.link = idMap.linkIDs[input.link]
+                    }
+                }
+            }
+            if (node.outputs) {
+                for (const output of node.outputs) {
+                    if (output.links) {
+                        output.links = output.links.map(l => idMap.linkIDs[l]);
+                    }
+                }
+            }
+        }
+
+        // Recurse!
+        for (const node of graph.nodes) {
+            if (node.type === "graph/subgraph") {
+                const merge = reassignGraphUUIDs(node.subgraph);
+                idMap.nodeIDs.assign(merge.nodeIDs)
+                idMap.linkIDs.assign(merge.linkIDs)
+            }
+        }
+    };
+
     Subgraph.prototype.clone = function() {
         var node = LiteGraph.createNode(this.type);
         var data = this.serialize();
+
+        if (LiteGraph.use_uuids) {
+            // LGraph.serialize() seems to reuse objects in the original graph. But we
+            // need to change node IDs here, so clone it first.
+            const subgraph = LiteGraph.cloneObject(data.subgraph)
+
+            this.reassignSubgraphUUIDs(subgraph);
+
+            data.subgraph = subgraph;
+        }
+
         delete data["id"];
         delete data["inputs"];
         delete data["outputs"];
@@ -445,6 +529,7 @@ export default function baseWidget(LiteGraph) {
     GraphInput.desc = "Input of the graph";
 
 	GraphInput.prototype.onConfigure = function()
+
 	{
 		this.updateType();
 	}
@@ -695,10 +780,6 @@ export default function baseWidget(LiteGraph) {
         this.widget = this.addWidget("number","value",1,"value");
         this.widgets_up = true;
         this.size = [180, 30];
-        this.view_info={
-            type: "number",
-            key: "value",
-        }
     }
 
     ConstantNumber.title = "Const Number";
@@ -734,10 +815,6 @@ export default function baseWidget(LiteGraph) {
         this.serialize_widgets = true;
         this.widgets_up = true;
         this.size = [140, 30];
-        this.view_info={
-            type: "boolean",
-            key: "value",
-        }
     }
 
     ConstantBoolean.title = "Const Boolean";
@@ -767,10 +844,6 @@ export default function baseWidget(LiteGraph) {
         this.widget = this.addWidget("text","value","","value");  //link to property value
         this.widgets_up = true;
         this.size = [180, 30];
-        this.view_info={
-            type: "string",
-            key: "value",
-        }
     }
 
     ConstantString.title = "Const String";
@@ -910,52 +983,77 @@ export default function baseWidget(LiteGraph) {
 
     LiteGraph.registerNodeType("basic/file", ConstantFile);
 
+
+//to store json objects
+function JSONParse() {
+	this.addInput("parse", LiteGraph.ACTION);
+	this.addInput("json", "string");
+	this.addOutput("done", LiteGraph.EVENT);
+	this.addOutput("object", "object");
+	this.widget = this.addWidget("button","parse","",this.parse.bind(this));
+	this._str = null;
+	this._obj = null;
+}
+
+JSONParse.title = "JSON Parse";
+JSONParse.desc = "Parses JSON String into object";
+
+JSONParse.prototype.parse = function()
+{
+	if(!this._str)
+		return;
+
+	try {
+		this._str = this.getInputData(1);
+		this._obj = JSON.parse(this._str);
+		this.boxcolor = "#AEA";
+		this.triggerSlot(0);
+	} catch (err) {
+		this.boxcolor = "red";
+	}
+}
+
+JSONParse.prototype.onExecute = function() {
+	this._str = this.getInputData(1);
+	this.setOutputData(1, this._obj);
+};
+
+JSONParse.prototype.onAction = function(name) {
+	if(name == "parse")
+		this.parse();
+}
+
+LiteGraph.registerNodeType("basic/jsonparse", JSONParse);	
+
 	//to store json objects
     function ConstantData() {
         this.addOutput("data", "object");
         this.addProperty("value", "");
-        this.widget = this.addWidget(
-            "text",
-            "json",
-            this.properties.value,
-            this.setValue.bind(this)
-        );
+        this.widget = this.addWidget("text","json","","value");
         this.widgets_up = true;
         this.size = [140, 30];
-        this.view_info={
-            type: "object",
-            key: "value",
-        }
+        this._value = null;
     }
 
     ConstantData.title = "Const Data";
     ConstantData.desc = "Constant Data";
 
     ConstantData.prototype.onPropertyChanged = function(name, value) {
+        this.widget.value = value;
         if (value == null || value == "") {
-            this.widget.value = "";
-            this.properties.value = null;
             return;
         }
 
-        if (value.constructor === String) {
-            this.widget.value = value;
-            try {
-                this.properties.value = JSON.parse(value);
-                this.boxcolor = "#AEA";
-            } catch (err) {
-                this.boxcolor = "red";
-            }
-            return;
+        try {
+            this._value = JSON.parse(value);
+            this.boxcolor = "#AEA";
+        } catch (err) {
+            this.boxcolor = "red";
         }
-
-        this.widget.value = JSON.stringify(value);
-        this.properties.value = value;
-        this.boxcolor = "#AEA";
     };
 
     ConstantData.prototype.onExecute = function() {
-        this.setOutputData(0, this.properties.value);
+        this.setOutputData(0, this._value);
     };
 
 	ConstantData.prototype.setValue = ConstantNumber.prototype.setValue;
@@ -972,10 +1070,6 @@ export default function baseWidget(LiteGraph) {
         this.widget = this.addWidget("text","array",this.properties.value,"value");
         this.widgets_up = true;
         this.size = [140, 50];
-        this.view_info={
-            type: "array",
-            key: "value",
-        }
     }
 
     ConstantArray.title = "Const Array";
@@ -1303,11 +1397,7 @@ export default function baseWidget(LiteGraph) {
 			if(!that.value)
 				return;
 			that.downloadAsFile();
-        });
-        this.view_info={
-            type: "button",
-            function: that.downloadAsFile,
-        }
+		});
     }
 
     DownloadData.title = "Download";
@@ -1515,7 +1605,7 @@ export default function baseWidget(LiteGraph) {
     };
 
     NodeScript.title = "Script";
-    NodeScript.desc = "executes a code (max 100 characters)";
+    NodeScript.desc = "executes a code (max 256 characters)";
 
     NodeScript.widgets_info = {
         onExecute: { type: "code" }

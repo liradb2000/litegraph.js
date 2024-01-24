@@ -142,6 +142,9 @@ graph.start()
 
 ## Projects using it
 
+### [comfyUI](https://github.com/comfyanonymous/ComfyUI)
+![screenshot](https://github.com/comfyanonymous/ComfyUI/blob/6efe561c2a7321501b1b27f47039c7616dda1860/comfyui_screenshot.png)
+
 ### [webglstudio.org](http://webglstudio.org)
 
 ![WebGLStudio](imgs/webglstudio.gif "WebGLStudio")
@@ -179,6 +182,7 @@ You can write any feedback to javi.agenjo@gmail.com
 
 ## Contributors
 
+- atlasan
 - kriffe
 - rappestad
 - InventivetalentDev

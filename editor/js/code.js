@@ -5,11 +5,28 @@ LiteGraph.node_images_path = "../nodes_data/";
 var editor = new LiteGraph.Editor("main",{miniwindow:false});
 window.graphcanvas = editor.graphcanvas;
 window.graph = editor.graph;
-window.addEventListener("resize", function() { editor.graphcanvas.resize(); } );
+updateEditorHiPPICanvas();
+window.addEventListener("resize", function() { 
+  editor.graphcanvas.resize();
+  updateEditorHiPPICanvas();
+} );
 //window.addEventListener("keydown", editor.graphcanvas.processKey.bind(editor.graphcanvas) );
 window.onbeforeunload = function(){
 	var data = JSON.stringify( graph.serialize() );
 	localStorage.setItem("litegraphg demo backup", data );
+}
+
+function updateEditorHiPPICanvas() {
+  const ratio = window.devicePixelRatio;
+  if(ratio == 1) { return }
+  const rect = editor.canvas.parentNode.getBoundingClientRect();
+  const { width, height } = rect;
+  editor.canvas.width = width * ratio;
+  editor.canvas.height = height * ratio;
+  editor.canvas.style.width = width + "px";
+  editor.canvas.style.height = height + "px";
+  editor.canvas.getContext("2d").scale(ratio, ratio);
+  return editor.canvas;
 }
 
 //enable scripting
@@ -87,6 +104,7 @@ addDemo("Audio", "examples/audio.json");
 addDemo("Audio Delay", "examples/audio_delay.json");
 addDemo("Audio Reverb", "examples/audio_reverb.json");
 addDemo("MIDI Generation", "examples/midi_generation.json");
+addDemo("Copy Paste", "examples/copypaste.json");
 addDemo("autobackup", function(){
 	var data = localStorage.getItem("litegraphg demo backup");
 	if(!data)
@@ -171,3 +189,7 @@ function enableWebGL()
 		}
 	}
 }
+
+// Tests
+// CopyPasteWithConnectionToUnselectedOutputTest();
+// demo();
