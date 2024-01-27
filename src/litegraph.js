@@ -4995,8 +4995,10 @@
             out[0] = this.pos[0] + this.size[0] + 1 - offset;
         }
         out[1] =
+            (this.widgets_up
+                ? slot_number * (LiteGraph.NODE_SLOT_HEIGHT + 4) + offset
+                : (slot_number + 0.7) * LiteGraph.NODE_SLOT_HEIGHT + 2) +
             this.pos[1] +
-            (slot_number + 0.7) * LiteGraph.NODE_SLOT_HEIGHT +
             (this.constructor.slot_start_y || this.slot_start_y || 0);
         return out;
     };
