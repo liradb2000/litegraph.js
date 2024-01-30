@@ -504,6 +504,9 @@
             }
 
             node.type = type;
+            node._capturedOutputs = new Map();
+            // node.__events = [];
+
 
             if (!node.title && title) {
                 node.title = title;
@@ -2775,6 +2778,9 @@
 			}
 		}
 
+        this._capturedOutputs = new Map();
+        // this.__events = [];
+
         if (this.onConfigure) {
             this.onConfigure(info);
         }
@@ -2896,6 +2902,46 @@
 
         return node;
     };
+
+    /* Creates a clone for event branches of this node */
+    LGraphNode.prototype.cloneForEvent = function(action_call) {
+        if(!this._clonedNodes) this._clonedNodes = new Map();
+        else {
+            const _clonedNode=this._clonedNodes.get(action_call);
+            if(_clonedNode) return _clonedNode;
+        }
+        const _partitionedStore = {
+            event:[],
+        };
+        const clonedNode=new Proxy(this,{get(target,key,receiver){
+            if(key==="getInputData"){
+                return _partitionedStore._gip ? _partitionedStore._gip : (_partitionedStore._gip = new Proxy(Reflect.get(target,key,receiver),{
+                    apply(target, thisArg, argumentsList) {
+                        argumentsList[2]=action_call
+                        return Reflect.apply(target,thisArg,argumentsList);
+                    }
+                }))
+            }
+            if(key==="triggerSlot"){
+                return _partitionedStore._trig ? _partitionedStore._trig : (_partitionedStore._trig = new Proxy(Reflect.get(target,key,receiver),{
+                    apply(target, thisArg, argumentsList) {
+                        if(!argumentsList[3]) argumentsList[3]={}
+                        argumentsList[3].action_call=action_call
+                        return Reflect.apply(target,thisArg,argumentsList);
+                    }
+                }))
+            }
+            if(key==="__event"){
+                return _partitionedStore.event
+            }
+            return Reflect.get(target, key, receiver);
+        }})
+ 
+        this._clonedNodes.set(action_call, clonedNode);
+
+        return clonedNode;
+    }
+
 
     /**
      * serialize and stringify
@@ -3023,7 +3069,7 @@
      * @param {boolean} force_update if set to true it will force the connected node of this slot to output data into this link
      * @return {*} data or if it is not connected returns undefined
      */
-    LGraphNode.prototype.getInputData = function(slot, force_update) {
+    LGraphNode.prototype.getInputData = function(slot, force_update, partition_id = undefined) {
         if (!this.inputs) {
             return;
         } //undefined;
@@ -3039,14 +3085,24 @@
             return null;
         }
 
-        if (!force_update) {
+        if (!force_update && partition_id === undefined) {
             return link.data;
+        }
+
+        //special case: used to NXV subgraph linking
+        if(link.getPartitionedValue){
+            return link.getPartitionedValue(partition_id)
         }
 
         //special case: used to extract data from the incoming connection before the graph has been executed
         var node = this.graph.getNodeById(link.origin_id);
-        if (!node) {
+        if (!node || !node._capturedOutputs) {
             return link.data;
+        }
+
+        if(partition_id !== undefined) {
+            const _captured_info = node._capturedOutputs.get(partition_id);
+            return !!_captured_info? (_captured_info[slot]!==undefined? _captured_info[slot] : link.data) : link.data;
         }
 
         if (node.updateOutputData) {
@@ -3414,17 +3470,27 @@
      * @param {String} action name
      * @param {*} param
      */
-    LGraphNode.prototype.actionDo = function(action, param, options, action_slot ) {
+    LGraphNode.prototype.actionDo = async function(action, param, options, action_slot ) {
         options = options || {};
         if (this.onAction){
-            
+            // const that=Object.assign(Object.create(Object.getPrototypeOf(this)), this);
+
 			// enable this to give the event an ID
             if (!options.action_call) options.action_call = this.id+"_"+(action?action:"action")+"_"+Math.floor(Math.random()*9999);
-            
+
+            // that.getInputData = () => {
+            //     const [slot,force_update]=arguments;
+            //     this.getInputData(slot, force_update, options.action_call)
+            // }
+            // that.triggerSlot = () => {
+            //     const [slot, param, link_id, _options]=arguments;
+            //     _options = _options || {};
+            //     _options.action_call = options.action_call;
+            //     this.triggerSlot(slot, param, link_id, _options)
+            // }
             this.graph.nodes_actioning[this.id] = (action?action:"actioning"); //.push(this.id);
-            
-            this.onAction(action, param, options, action_slot);
-            
+            await this.onAction(action, param, options, action_slot);
+            await Promise.all(this.__events);
             this.graph.nodes_actioning[this.id] = false; //.pop();
             
             // save execution/action ref
@@ -3459,9 +3525,25 @@
         }
     };
 
+    // /**
+    //  * Triggers a slot event in this node: cycle output slots and launch execute/action on connected nodes
+    //  * @private
+    //  * @method _triggerSlot
+    //  * @param {Number} slot the index of the output slot
+    //  * @param {*} param
+    //  * @param {Number} link_id [optional] in case you want to trigger and specific output link in a slot
+    //  */
+    // LGraphNode.prototype.triggerSlot = function(slot, param, link_id, options) {
+    //     const _capturedOutputs = this.outputs.map(({_data})=>_data);
+	// 	if (!options.action_call) options.action_call = this.id+"_act_"+Math.floor(Math.random()*9999);
+
+    //     this._capturedOutputs.set(options.action_call, _capturedOutputs);
+    //     this._triggerSlot(slot, param, link_id, options)
+    // };
+
     /**
      * Triggers a slot event in this node: cycle output slots and launch execute/action on connected nodes
-     * @method triggerSlot
+     * @method _triggerSlot
      * @param {Number} slot the index of the output slot
      * @param {*} param
      * @param {Number} link_id [optional] in case you want to trigger and specific output link in a slot
@@ -3494,6 +3576,7 @@
         if (this.graph) {
             this.graph._last_trigger_time = LiteGraph.getTime();
         }
+        const __async_wait_list = [];
 
         //for every link attached here
         for (var k = 0; k < links.length; ++k) {
@@ -3541,11 +3624,21 @@
                 }
                 else
                 {
+                    const _capturedOutputs = this.outputs.map(({_data})=>_data);
+                    this._capturedOutputs.set(options.action_call, _capturedOutputs);
+
+                    const clonedNode=node.cloneForEvent(options.action_call);
                     // wrap node.onAction(target_connection.name, param);
-                    node.actionDo( target_connection.name, param, options, link_info.target_slot );
+                    __async_wait_list.push(clonedNode.actionDo( target_connection.name, param, options, link_info.target_slot ));
                 }
             }
         }
+        this.__events.push(...__async_wait_list);
+        return Promise.all(__async_wait_list).then(() => {
+            this._capturedOutputs.delete(options.action_call);
+            if (this._clonedNodes) this._clonedNodes.delete(options.action_call);
+            this.__events.splice(0);
+         });
     };
 
     /**
