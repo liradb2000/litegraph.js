@@ -7422,6 +7422,8 @@ LGraphNode.prototype.executeAction = function(action)
         if (e.target.localName == "input") {
             return;
         }
+        
+        const { keydown:_customizedKeyDown, keyup:_customizedKeyUp } = this.bindingKeys || {};
 
         if (e.type == "keydown") {
             if (e.keyCode == 32) {
@@ -7467,6 +7469,11 @@ LGraphNode.prototype.executeAction = function(action)
                 }
             }
 
+            if(!!_customizedKeyDown) {
+                block_default = _customizedKeyDown(e)
+            }
+
+
             //collapse
             //...
 
@@ -7482,6 +7489,10 @@ LGraphNode.prototype.executeAction = function(action)
             if (e.keyCode == 32) {
                 // space
                 this.dragging_canvas = false;
+            }
+
+            if(!!_customizedKeyUp) {
+                block_default = _customizedKeyUp(e)
             }
 
             if (this.selected_nodes) {
