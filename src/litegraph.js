@@ -505,7 +505,7 @@
 
             node.type = type;
             node._capturedOutputs = new Map();
-            // node.__events = [];
+            node.__events = [];
 
 
             if (!node.title && title) {
@@ -2779,7 +2779,12 @@
 		}
 
         this._capturedOutputs = new Map();
-        // this.__events = [];
+        this.__events = [];
+
+        this.slot_start_y = this.mode === 0 ? -20 : 4;
+        if (this.widgets_up) {
+            this.widgets_start_y = (this.widgets_start_y || 2) + (this.mode === 0 ? 0 : 24);
+        }
 
         if (this.onConfigure) {
             this.onConfigure(info);
@@ -2911,7 +2916,7 @@
             if(_clonedNode) return _clonedNode;
         }
         const _partitionedStore = {
-            event:[],
+            events:[],
         };
         const clonedNode=new Proxy(this,{get(target,key,receiver){
             if(key==="getInputData"){
@@ -2931,8 +2936,8 @@
                     }
                 }))
             }
-            if(key==="__event"){
-                return _partitionedStore.event
+            if(key==="__events"){
+                return _partitionedStore.events
             }
             return Reflect.get(target, key, receiver);
         }})
@@ -3576,7 +3581,6 @@
         if (this.graph) {
             this.graph._last_trigger_time = LiteGraph.getTime();
         }
-        const __async_wait_list = [];
 
         //for every link attached here
         for (var k = 0; k < links.length; ++k) {
@@ -3629,16 +3633,15 @@
 
                     const clonedNode=node.cloneForEvent(options.action_call);
                     // wrap node.onAction(target_connection.name, param);
-                    __async_wait_list.push(clonedNode.actionDo( target_connection.name, param, options, link_info.target_slot ));
+                    this.__events.push(clonedNode.actionDo( target_connection.name, param, options, link_info.target_slot ));
                 }
             }
         }
-        this.__events.push(...__async_wait_list);
-        return Promise.all(__async_wait_list).then(() => {
+        return Promise.all(this.__events).finally(() => {
             this._capturedOutputs.delete(options.action_call);
             if (this._clonedNodes) this._clonedNodes.delete(options.action_call);
             this.__events.splice(0);
-         });
+        });
     };
 
     /**
@@ -5088,10 +5091,8 @@
             out[0] = this.pos[0] + this.size[0] + 1 - offset;
         }
         out[1] =
-            (this.widgets_up
-                ? slot_number * (LiteGraph.NODE_SLOT_HEIGHT + 4) + offset
-                : (slot_number + 0.7) * LiteGraph.NODE_SLOT_HEIGHT + 2) +
-            this.pos[1] +
+            slot_number * (LiteGraph.NODE_SLOT_HEIGHT + (this.widgets_up ? 4 : 0)) +
+            offset + this.pos[1] +
             (this.constructor.slot_start_y || this.slot_start_y || 0);
         return out;
     };
