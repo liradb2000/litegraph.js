@@ -3496,6 +3496,9 @@
             this.graph.nodes_actioning[this.id] = (action?action:"actioning"); //.push(this.id);
             await this.onAction(action, param, options, action_slot);
             await Promise.all(this.__events);
+            
+            if (this._clonedNodes) this._clonedNodes.delete(options.action_call);
+
             this.graph.nodes_actioning[this.id] = false; //.pop();
             
             // save execution/action ref
@@ -3639,7 +3642,6 @@
         }
         return Promise.all(this.__events).finally(() => {
             this._capturedOutputs.delete(options.action_call);
-            if (this._clonedNodes) this._clonedNodes.delete(options.action_call);
             this.__events.splice(0);
         });
     };
