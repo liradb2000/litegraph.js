@@ -3107,7 +3107,7 @@
 
         if(partition_id !== undefined) {
             const _captured_info = node._capturedOutputs.get(partition_id);
-            return !!_captured_info? (_captured_info[slot]!==undefined? _captured_info[slot] : link.data) : link.data;
+            return !!_captured_info? (_captured_info[link.origin_slot]!==undefined? _captured_info[link.origin_slot] : link.data) : link.data;
         }
 
         if (node.updateOutputData) {
