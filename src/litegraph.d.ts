@@ -220,6 +220,7 @@ export const LiteGraph: {
     debug: boolean;
     catch_exceptions: boolean;
     throw_errors: boolean;
+    onError: Function | null;
     /** if set to true some nodes like Formula would be allowed to evaluate code that comes from unsafe sources (like node configuration), which could lead to exploits */
     allow_scripts: boolean;
     /** node types by string */
