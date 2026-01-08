@@ -97,6 +97,7 @@
         debug: false,
         catch_exceptions: true,
         throw_errors: true,
+        onError: undefined,
         allow_scripts: false, //if set to true some nodes like Formula would be allowed to evaluate code that comes from unsafe sources (like node configuration), which could lead to exploits
         use_deferred_actions: true, //executes actions during the graph execution flow
         registered_node_types: {}, //nodetypes by string
@@ -1118,7 +1119,7 @@
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
 
-    LGraph.prototype.runStep = function(num, do_not_catch_errors, limit, type ) {
+    LGraph.prototype.runStep = function(num, do_not_catch_errors=true, limit, type ) {
         return LiteGraph.ASYNC? this.asyncRunStep(num, do_not_catch_errors, limit, type ):this.syncRunStep(num, do_not_catch_errors, limit, type )
     }
 
@@ -1149,7 +1150,7 @@
 
 		limit = limit || nodes.length;
 
-        if (do_not_catch_errors) {
+        if (do_not_catch_errors || !LiteGraph.catch_exceptions) {
             //iterations
             for (var i = 0; i < num; i++) {
                 for (var j = 0; j < limit; ++j) {
@@ -1196,11 +1197,13 @@
                 this.errors_in_execution = false;
             } catch (err) {
                 this.errors_in_execution = true;
+
+                if(LiteGraph.onError){
+                    LiteGraph.onError(err, node)
+                }
+                
                 if (LiteGraph.throw_errors) {
                     throw err;
-                }
-                if (LiteGraph.debug) {
-                    console.log("Error during execution: " + err);
                 }
                 this.stop();
             }
@@ -1244,7 +1247,7 @@
 
 		limit = limit || nodes.length;
 
-        if (do_not_catch_errors) {
+        if (do_not_catch_errors || !LiteGraph.catch_exceptions) {
             //iterations
             for (var i = 0; i < num; i++) {
                 for (var j = 0; j < limit; ++j) {
@@ -1286,11 +1289,13 @@
                 this.errors_in_execution = false;
             } catch (err) {
                 this.errors_in_execution = true;
+                
+                if(LiteGraph.onError){
+                    LiteGraph.onError(err, node)
+                }
+                
                 if (LiteGraph.throw_errors) {
                     throw err;
-                }
-                if (LiteGraph.debug) {
-                    console.log("Error during execution: " + err);
                 }
                 this.stop();
             }
@@ -3107,7 +3112,7 @@
 
         if(partition_id !== undefined) {
             const _captured_info = node._capturedOutputs.get(partition_id);
-            return !!_captured_info? (_captured_info[slot]!==undefined? _captured_info[slot] : link.data) : link.data;
+            return !!_captured_info? (_captured_info[link.origin_slot]!==undefined? _captured_info[link.origin_slot] : link.data) : link.data;
         }
 
         if (node.updateOutputData) {
@@ -3494,8 +3499,24 @@
             //     this.triggerSlot(slot, param, link_id, _options)
             // }
             this.graph.nodes_actioning[this.id] = (action?action:"actioning"); //.push(this.id);
-            await this.onAction(action, param, options, action_slot);
+            if (LiteGraph.catch_exceptions){
+                try {
+                    await this.onAction(action, param, options, action_slot);
+                } catch(err) {
+                    if(LiteGraph.onError){
+                        LiteGraph.onError(err, this)
+                    }
+                    if (LiteGraph.throw_errors) {
+                        throw err;
+                    }
+                }
+            } else {
+                await this.onAction(action, param, options, action_slot);
+            }
             await Promise.all(this.__events);
+            
+            if (this._clonedNodes) this._clonedNodes.delete(options.action_call);
+
             this.graph.nodes_actioning[this.id] = false; //.pop();
             
             // save execution/action ref
@@ -3639,7 +3660,6 @@
         }
         return Promise.all(this.__events).finally(() => {
             this._capturedOutputs.delete(options.action_call);
-            if (this._clonedNodes) this._clonedNodes.delete(options.action_call);
             this.__events.splice(0);
         });
     };
@@ -7422,6 +7442,8 @@ LGraphNode.prototype.executeAction = function(action)
         if (e.target.localName == "input") {
             return;
         }
+        
+        const { keydown:_customizedKeyDown, keyup:_customizedKeyUp } = this.bindingKeys || {};
 
         if (e.type == "keydown") {
             if (e.keyCode == 32) {
@@ -7467,6 +7489,11 @@ LGraphNode.prototype.executeAction = function(action)
                 }
             }
 
+            if(!!_customizedKeyDown) {
+                block_default = _customizedKeyDown(e)
+            }
+
+
             //collapse
             //...
 
@@ -7482,6 +7509,10 @@ LGraphNode.prototype.executeAction = function(action)
             if (e.keyCode == 32) {
                 // space
                 this.dragging_canvas = false;
+            }
+
+            if(!!_customizedKeyUp) {
+                block_default = _customizedKeyUp(e)
             }
 
             if (this.selected_nodes) {
